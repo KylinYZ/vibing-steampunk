@@ -1406,8 +1406,11 @@ func (c *Client) GetTransaction(ctx context.Context, tcode string) (*Transaction
 
 // TypeInfo represents type information.
 type TypeInfo struct {
-	Name        string
-	Type        string
+	Name string
+	Type string
+	// Domain is set only when the data element refers to a domain. It is an
+	// additive field: Type continues to mean the resolved ABAP data type.
+	Domain      string
 	Description string
 	Length      int
 	Decimals    int
@@ -1417,33 +1420,42 @@ type TypeInfo struct {
 func (c *Client) GetTypeInfo(ctx context.Context, typeName string) (*TypeInfo, error) {
 	typeName = strings.ToUpper(typeName)
 
-	resp, err := c.transport.Request(ctx, fmt.Sprintf("/sap/bc/adt/ddic/dataelements/%s", typeName), &RequestOptions{
+	resp, err := c.transport.Request(ctx, fmt.Sprintf("/sap/bc/adt/ddic/dataelements/%s", url.PathEscape(typeName)), &RequestOptions{
 		Method: http.MethodGet,
-		Accept: "application/xml",
+		Accept: "application/vnd.sap.adt.dataelements.v2+xml",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("getting type info: %w", err)
 	}
 
-	type typeData struct {
-		Name        string `xml:"name,attr"`
-		Type        string `xml:"type,attr"`
-		Description string `xml:"description,attr"`
-		Length      int    `xml:"length,attr"`
-		Decimals    int    `xml:"decimals,attr"`
+	doc, err := parseDataElementDoc(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("parsing type info: %w", err)
 	}
-
-	var td typeData
-	if err := xml.Unmarshal(resp.Body, &td); err != nil {
+	if strings.TrimSpace(doc.DataElement.DataType) == "" {
+		return nil, fmt.Errorf("parsing type info: data element document is missing dataType")
+	}
+	length, err := parseDataElementNumber("dataTypeLength", doc.DataElement.DataTypeLength)
+	if err != nil {
+		return nil, fmt.Errorf("parsing type info: %w", err)
+	}
+	decimals, err := parseDataElementNumber("dataTypeDecimals", doc.DataElement.DataTypeDecimals)
+	if err != nil {
 		return nil, fmt.Errorf("parsing type info: %w", err)
 	}
 
+	domain := ""
+	if strings.EqualFold(strings.TrimSpace(doc.DataElement.TypeKind), "domain") {
+		domain = strings.TrimSpace(doc.DataElement.TypeName)
+	}
+
 	return &TypeInfo{
-		Name:        td.Name,
-		Type:        td.Type,
-		Description: td.Description,
-		Length:      td.Length,
-		Decimals:    td.Decimals,
+		Name:        doc.Name,
+		Type:        doc.DataElement.DataType,
+		Domain:      domain,
+		Description: doc.Description,
+		Length:      length,
+		Decimals:    decimals,
 	}, nil
 }
 

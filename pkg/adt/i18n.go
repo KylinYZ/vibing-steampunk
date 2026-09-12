@@ -32,21 +32,6 @@ type DataElementLabels struct {
 	Heading string `json:"heading"`
 }
 
-// dataElementDoc is the representation ADT actually serves for a data element.
-//
-// Only the four labels are mapped. The document also carries the domain, the
-// type, the field lengths and a dozen flags, and mapping those would be
-// inventing a feature under cover of a bug fix.
-type dataElementDoc struct {
-	XMLName     xml.Name `xml:"wbobj"`
-	DataElement struct {
-		Short   string `xml:"shortFieldLabel"`
-		Medium  string `xml:"mediumFieldLabel"`
-		Long    string `xml:"longFieldLabel"`
-		Heading string `xml:"headingFieldLabel"`
-	} `xml:"dataElement"`
-}
-
 // TextPoolEntry represents a single text pool entry (text element/symbol) of a program.
 type TextPoolEntry struct {
 	ID   string `json:"id" xml:"id,attr"`
@@ -116,8 +101,8 @@ func (c *Client) GetDataElementLabels(ctx context.Context, name, lang string) (*
 		return nil, fmt.Errorf("get data element labels: %w", err)
 	}
 
-	var doc dataElementDoc
-	if err := xml.Unmarshal(resp.Body, &doc); err != nil {
+	doc, err := parseDataElementDoc(resp.Body)
+	if err != nil {
 		return nil, fmt.Errorf("parse data element labels: %w", err)
 	}
 
