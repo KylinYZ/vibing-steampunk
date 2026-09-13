@@ -1405,6 +1405,19 @@ func (c *Client) GetTransaction(ctx context.Context, tcode string) (*Transaction
 // --- Type Info Operations ---
 
 // TypeInfo represents type information.
+//
+// Name, Type and Description come from the root element's adtcore attributes
+// and are populated. Length and Decimals are NOT: the dataelements v2 document
+// carries the domain, the type and the field lengths as child elements of
+// dtel:dataElement, not as attributes of the root, so the attribute mapping
+// below never matches them and both stay zero. That went unnoticed because the
+// request was refused with 406 before it could parse anything (see the Accept
+// header in GetTypeInfo) — the parser has never once seen a real response.
+//
+// Zero here therefore means "not read", not "the type has no length". Filling
+// these in needs the real document read off a system first; guessing the child
+// element names would be inventing a feature under cover of a bug fix, which is
+// the same call i18n.go made on the same document.
 type TypeInfo struct {
 	Name        string
 	Type        string
@@ -1419,7 +1432,13 @@ func (c *Client) GetTypeInfo(ctx context.Context, typeName string) (*TypeInfo, e
 
 	resp, err := c.transport.Request(ctx, fmt.Sprintf("/sap/bc/adt/ddic/dataelements/%s", typeName), &RequestOptions{
 		Method: http.MethodGet,
-		Accept: "application/xml",
+		// The versioned vocabulary type, not application/xml. This endpoint
+		// refuses the generic one with 406 "The message content is not
+		// acceptable" on every name, so this call had never returned anything
+		// to anybody. GetDataElementLabels in i18n.go hit the identical bug on
+		// the identical endpoint and was fixed there; this twin was missed, so
+		// the same 406 survived here. Keep the two in step.
+		Accept: "application/vnd.sap.adt.dataelements.v2+xml",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("getting type info: %w", err)
