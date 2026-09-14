@@ -9,6 +9,11 @@ S/4, AMDP needs HANA, and some ADT resources present on S/4 are absent on ERP.
 >
 > **New in the last three releases** — the part of a root cause that never fit in a tool:
 >
+> - **[The MIME repository, byte-exact](#the-mime-repository-byte-exact--smw0-over-plain-adt).**
+>   Every file anyone uploaded through SMW0 — images, audio, a font, a game — read back
+>   whole. The bytes are a data cluster of 255-byte lines whose last line is padded, so
+>   the cluster cannot say where the file ends; `filesize` in WWWPARAMS can, and that is
+>   the step that makes it exact rather than nearly right. Nothing installed on the server.
 > - **[Cluster tables, decoded](#cluster-tables-decoded--baldat-indx-stxl-over-plain-adt).**
 >   BALDAT, INDX, STXL — every table an `EXPORT ... TO DATABASE` ever wrote — read over
 >   plain ADT and decoded here: SAP's LZH and LZC decompressed in Go, the cluster format
@@ -482,6 +487,47 @@ Checked on 7.50, 7.57 and 7.58. 7.50 serves the dump feed but not the detail
 resource, so there is no call stack to read there — the correlation drops that
 rung and still ranks on the rest.
 
+### The MIME repository, byte-exact — SMW0 over plain ADT
+
+Anything uploaded through SMW0 — a logo, a sound, a font, a PDF, a Z-machine
+game a websocket handler loads at runtime — is reachable, and comes back byte
+for byte.
+
+It is not a column you can select. SMW0 writes the file into `WWWDATA` as an
+INDX-style data cluster: LZH-compressed, split over as many rows as it takes,
+and inside the cluster a table of fixed **255-byte lines**. The last line is
+padded with zeroes, so the cluster alone cannot say where the file ends. The
+true length is the `filesize` parameter in `WWWPARAMS`, and truncating to it is
+the whole difference between a file and a nearly-right file.
+
+```bash
+vsp -s a4h w3mi list                                  # every MIME object with size and type
+vsp -s a4h w3mi list 'ZDEMO%'                         # SQL LIKE on the object id
+vsp -s a4h w3mi get ZDEMO_LOGO.PNG --out logo.png
+vsp -s a4h w3mi get ZDEMO_LOGO.PNG --abapgit-dir src/ # the abapGit pair, ready to commit
+```
+
+Both halves are ordinary table reads, so nothing goes on the server: no
+abapGit, no RFC, no `ZADT_VSP`. `--abapgit-dir` writes the pair abapGit
+expects — `<name>.w3mi.data.<ext>` plus `<name>.w3mi.xml`, with the object id
+escaped the way abapGit escapes it (`ZORK-MINI.Z3` → `zork-mini%2ez3`).
+
+The `filename` parameter is deliberately **not** written into that XML, and a
+test enforces it: it records the path the file was uploaded from — a user name,
+a host, a directory layout — and these files are meant to be committable.
+
+Where a wrong answer would look like a right one, it refuses instead of
+guessing. A non-zero byte past `filesize` means `filesize` and the cluster
+disagree; a cluster shorter than `filesize` means the object is truncated on
+the system. Both say so rather than hand back a plausible file.
+
+Verified on arithmetic that can fail. A 52216-byte game came out of 205 lines
+of 255 = 52275, truncated to `filesize`, and the 59 discarded bytes were all
+zero — then the file checked *itself*: a Z-machine v3 header declares its own
+length at `0x1A` and its checksum at `0x1C`, and both matched what came out.
+Two further extractions by different routes produced the identical md5. A
+single bad byte anywhere would have broken the checksum.
+
 ### What really ran: `vsp trace`
 
 A static call graph is a hypothesis. ABAP resolves `CALL FUNCTION lv_name`,
@@ -906,6 +952,10 @@ vsp rfc debug                                    # debug REPL on a pinned RFC se
 vsp adt debug                                    # the same REPL over stateful HTTPS
 vsp trace run ZFOO --call                        # SAT trace: the measured call tree
 vsp trace unit ZFOO --line 12 --values           # record a unit, statement by statement
+
+# MIME repository (SMW0) — binary objects, byte-exact
+vsp w3mi list 'ZDEMO%'
+vsp w3mi get ZDEMO_LOGO.PNG --abapgit-dir src/
 
 # Tables & search
 vsp query T000 --top 5                           # query any table
