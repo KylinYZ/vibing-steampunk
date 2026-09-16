@@ -211,7 +211,6 @@ flowchart LR
 | Deploy large file | `ImportFromFile` | Bypasses token limits |
 
 ### Guarded updates with source hashes
-
 For a write that must not overwrite another editor's change, first request a
 structured read with `include_hash=true`. Pass its `sourceHash` back as
 `expected_source_hash` to `WriteSource`, `EditSource`, `ImportFromFile`, or
@@ -233,6 +232,28 @@ read-back is an uncertain outcome, so inspect SAP rather than retry blindly.
   "expected_source_hash": "sha256:..."
 }
 ```
+
+### Creating DDIC domains and data elements
+
+`CreateObject` supports `DOMA/DD` and `DTEL/DE`. Both calls create the SAP
+repository shell, write the typed DDIC property document while holding a
+MODIFY lock, unlock, activate, and verify the resulting object. A data element
+may reference an existing domain through `domain`.
+
+```json
+{
+  "object_type": "DOMA/DD",
+  "name": "ZORDER_STATUS",
+  "description": "Order status",
+  "package_name": "$TMP",
+  "properties_json": "{\"dataType\":\"CHAR\",\"length\":1,\"decimals\":0,\"outputLength\":1}"
+}
+```
+
+For `DTEL/DE`, use `domain`, `dataType`, `length`, `decimals`, and
+`labels` (`short`, `medium`, `long`, `heading`) in `properties_json`. The
+universal tool accepts the shorter form:
+`SAP(action="create", target="DOMA ZORDER_STATUS", params={package:"$TMP", properties:{...}})`.
 
 ### Searching
 
