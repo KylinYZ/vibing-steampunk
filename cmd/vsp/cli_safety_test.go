@@ -71,8 +71,21 @@ func TestCLITransportableEditsReachSourceWriteWithSafePrecedence(t *testing.T) {
 	var requests []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
-		requests = append(requests, r.Method)
+		// 只把写请求计入。opt-in/package gate 管的是"修改"，本测试要锁死
+		// 的也是它：没有显式 opt-in，写请求绝不发到网。upsert 的存在性
+		// 探测是只读 GET（合并 fix-143 后用于选择 update/create 分支），
+		// 无副作用，不计入、也不参与断言。
+		if r.Method != http.MethodGet {
+			requests = append(requests, r.Method)
+		}
 		mu.Unlock()
+		if r.Method == http.MethodGet {
+			// 存在性探测答 200（对象存在）让 upsert 走 update 分支——
+			// create 分支会先要 package，写请求就到不了网了；update 分支
+			// 的写请求（PUT/POST）才命中下面的 503。
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 		http.Error(w, "fake ADT rejects writes", http.StatusServiceUnavailable)
 	}))
 	t.Cleanup(srv.Close)

@@ -38,6 +38,9 @@ func TestRunSourceWriteResolvesExistingPackage(t *testing.T) {
 	t.Setenv("SAP_URL", sap.URL)
 	t.Setenv("SAP_USER", "TESTUSER")
 	t.Setenv("SAP_PASSWORD", "secret")
+	// 本测试带 --transport 验证包解析流程；显式声明 transportable opt-in，
+	// 不依赖命令行 flag 或其他测试残留的全局状态（单跑/组合跑行为一致）。
+	t.Setenv("SAP_ALLOW_TRANSPORTABLE_EDITS", "true")
 	t.Setenv("SAP_ALLOWED_PACKAGES", "$TMP")
 	oldSystemName := systemName
 	systemName = ""
@@ -54,6 +57,13 @@ func TestRunSourceWriteResolvesExistingPackage(t *testing.T) {
 	oldStdin := os.Stdin
 	os.Stdin = stdin
 	t.Cleanup(func() { os.Stdin = oldStdin; _ = stdin.Close() })
+
+	// 本测试直接调用孤立的 sourceWriteCmd（未挂到 root 命令树下），
+	// 而 resolveAllowTransportableEdits 会 fail-closed 地查找该 flag；
+	// 显式挂上 root 的 persistent flag 以模拟真实命令树。
+	if sourceWriteCmd.Flags().Lookup("allow-transportable-edits") == nil {
+		sourceWriteCmd.Flags().AddFlag(rootCmd.PersistentFlags().Lookup("allow-transportable-edits"))
+	}
 
 	err = runSourceWrite(sourceWriteCmd, []string{"PROG", "ZDEMO_CLI_PACKAGE"})
 	if err != nil {

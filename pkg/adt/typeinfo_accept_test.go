@@ -38,7 +38,7 @@ func TestGetTypeInfo_SendsVersionedAccept(t *testing.T) {
 }
 
 func TestGetDataElementLabels_SendsVersionedAccept(t *testing.T) {
-	xmlResp := `<?xml version="1.0" encoding="utf-8"?><blue:wbobj xmlns:blue="http://www.sap.com/wbobj/dictionary/dtel"><dtel:dataElement xmlns:dtel="http://www.sap.com/adt/dictionary/dataelements"><dtel:shortFieldLabel>X</dtel:shortFieldLabel></dtel:dataElement></blue:wbobj>`
+	xmlResp := `<?xml version="1.0" encoding="utf-8"?><blue:wbobj adtcore:name="ZDEMO_ORDER_ID" xmlns:blue="http://www.sap.com/wbobj/dictionary/dtel"><dtel:dataElement xmlns:dtel="http://www.sap.com/adt/dictionary/dataelements"><dtel:shortFieldLabel>X</dtel:shortFieldLabel></dtel:dataElement></blue:wbobj>`
 
 	mock := &mockTransportClient{
 		responses: map[string]*http.Response{
