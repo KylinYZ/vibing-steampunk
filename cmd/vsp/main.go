@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -798,8 +799,9 @@ func processCookieAuth(cmd *cobra.Command) error {
 
 	// Process cookie file
 	if cookieFile != "" {
-		if _, err := os.Stat(cookieFile); os.IsNotExist(err) {
-			return fmt.Errorf("cookie file not found: %s", cookieFile)
+		cookieFile, err := filepath.Abs(cookieFile)
+		if err != nil {
+			return fmt.Errorf("resolving cookie file path: %w", err)
 		}
 
 		cookies, err := adt.LoadCookiesFromFile(cookieFile)
@@ -812,6 +814,12 @@ func processCookieAuth(cmd *cobra.Command) error {
 		}
 
 		cfg.Cookies = cookies
+		reauth, err := adt.NewCookieFileReauthFunc(cookieFile)
+		if err != nil {
+			return err
+		}
+		cfg.ReauthFunc = reauth
+		cfg.ReauthReadOnly = true
 		if cfg.Verbose {
 			fmt.Fprintf(os.Stderr, "[VERBOSE] Loaded %d cookies from file: %s\n", len(cookies), cookieFile)
 		}
