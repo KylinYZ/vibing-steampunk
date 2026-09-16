@@ -271,6 +271,11 @@ func NewServerWithClient(cfg *Config, adtClient *adt.Client) *Server {
 	// Register tools based on mode, disabled groups, and granular tool config
 	s.registerTools(cfg.Mode, cfg.DisabledGroups, cfg.ToolsConfig)
 
+	// 7.51 兼容：ADT 缺失资源（表创建、文本池）时由部署在目标系统上的
+	// ZVSP_COMPAT_751 受控 RFC 门面补齐；RFC 未配置时通道缺席、404 原样
+	// 报错。见 docs/legacy-751-compat.md。
+	adtClient.SetCompatFallback(&compat751Fallback{s: s})
+
 	// Start session keep-alive if configured
 	if cfg.KeepAliveInterval > 0 {
 		adtClient.StartKeepAlive(cfg.KeepAliveInterval, cfg.Verbose)

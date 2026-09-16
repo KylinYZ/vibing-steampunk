@@ -35,6 +35,15 @@ type Client struct {
 	// callers leave this nil; tests inject a stub to avoid opening a real
 	// WebSocket. See enhancements.go.
 	rfcFetcherFactory func(ctx context.Context) (rfcSourceFetcher, error)
+
+	// compatFallback 是老版本系统（7.51）缺失 ADT 资源时的受控 RFC 门面，
+	// 由组装方在启动时注入；为 nil 时兼容通道缺席，404 原样报错。
+	// 见 compat751.go。
+	compatFallback CompatFallback
+
+	// compatText 记录本系统 textelements ADT 资源的探测结论，避免每次
+	// 文本池调用都付一次探测往返。
+	compatText compatTextRoute
 }
 
 // NewClient creates a new ADT client with the given configuration.
@@ -1583,7 +1592,7 @@ type InstalledComponent struct {
 func (c *Client) GetInstalledComponents(ctx context.Context) ([]InstalledComponent, error) {
 	resp, err := c.transport.Request(ctx, "/sap/bc/adt/system/components", &RequestOptions{
 		Method: http.MethodGet,
-		Accept: "application/xml",
+		Accept: "application/atom+xml;type=feed",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("getting installed components: %w", err)

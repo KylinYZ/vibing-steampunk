@@ -100,7 +100,7 @@ These tools replace 11 granular read/write operations with intelligent parameter
 | `CompareSource` | Unified diff between any two ABAP objects | Focused |
 | `CloneObject` | Copy PROG/CLAS/INTF to new name | Focused |
 | `GetClassInfo` | Quick class metadata (methods, attrs, interfaces) | Focused |
-| `CreateTable` | Create DDIC table from JSON definition | Focused |
+| `CreateTable` | Create DDIC table from JSON definition (7.51 systems: routed to the ZVSP_COMPAT_751 RFC facade, see docs/legacy-751-compat.md) | Focused |
 | `CreatePackage` | Create local package ($...) | Focused |
 
 ---
@@ -380,8 +380,8 @@ Execute ABAP reports with parameters and capture ALV output. Includes async patt
 | `RunReportAsync` | Start report in background, returns task_id | Focused |
 | `GetAsyncResult` | Poll or wait for async task completion | Focused |
 | `GetVariants` | List available variants for a report | Focused |
-| `GetTextElements` | Get selection texts and text symbols | Focused |
-| `SetTextElements` | Update selection texts and text symbols | Focused |
+| `GetTextElements` | Get selection texts and text symbols (7.51: via the ZVSP_COMPAT_751 RFC facade) | Focused |
+| `SetTextElements` | Update selection texts and text symbols (7.51: full-pool write via the ZVSP_COMPAT_751 RFC facade) | Focused |
 
 **Async Pattern:**
 ```

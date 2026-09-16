@@ -1365,6 +1365,12 @@ func (c *Client) CreateTable(ctx context.Context, opts CreateTableOptions) error
 		Accept:      "application/vnd.sap.adt.tables.v2+xml",
 	})
 	if err != nil {
+		// ADT 的表创建资源自 7.52 SP00 才存在；404 说明这个版本根本没有
+		// 该资源（不是权限、不是名字冲突）。有 RFC 兼容门面时改走受控的
+		// 建表通道，安全门已在上方跑过；没有门面则把 404 原样给出。
+		if IsNotFoundError(err) {
+			return c.createTableViaCompat(ctx, opts, err)
+		}
 		return fmt.Errorf("creating table object: %w", err)
 	}
 

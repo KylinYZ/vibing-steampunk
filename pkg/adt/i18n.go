@@ -275,6 +275,19 @@ func (c *Client) GetTextPoolInLanguage(ctx context.Context, programName, lang st
 	programName = strings.ToUpper(programName)
 	lang = strings.ToUpper(lang)
 
+	// 老系统（7.51）上 textelements 整个资源集合都不存在：下方三个子资源
+	// 会全部 404 并被吞掉，函数静默返回空池——那是误导。探测确认缺资源
+	// 后改走 RFC 门面，一次拿回完整池（含本通道不维护的条目，原样透出）。
+	t := TextPoolTarget{Type: "PROG", Name: programName}
+	if compat, err := c.textPoolNeedsCompat(ctx, t); err != nil {
+		return nil, err
+	} else if compat {
+		if c.compatFallback == nil {
+			return nil, fmt.Errorf("this SAP release does not offer the ADT textelements resource (7.52+), and no RFC compat facade (ZVSP_COMPAT_751) is configured")
+		}
+		return c.compatFallback.TextPoolGet(ctx, t.Name, lang)
+	}
+
 	// The address was /programs/programs/{name}/textelements, which answers 404
 	// "No suitable resource found" on 7.58 — so this had never returned a text
 	// to anybody. The text pool is not a sub-resource of the program; it is its

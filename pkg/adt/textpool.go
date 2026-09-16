@@ -297,6 +297,21 @@ func (c *Client) TextPool(ctx context.Context, target TextPoolTarget, lang strin
 }
 
 func (c *Client) readTextDocument(ctx context.Context, t TextPoolTarget, kind, lang string, stateful bool) (*textDocument, error) {
+	// 老系统（7.51）没有 textelements 资源：该版本的 404 在下方会被
+	// 吞成"空文档"，读取会静默给出空池——必须按探测结论提前分流，
+	// 从 RFC 门面读回的完整池里切出本 kind 的文档。
+	compat, cerr := c.textPoolNeedsCompat(ctx, t)
+	if cerr != nil {
+		return nil, cerr
+	}
+	if compat {
+		pool, err := c.compatFallback.TextPoolGet(ctx, t.Name, lang)
+		if err != nil {
+			return nil, fmt.Errorf("reading the text pool of %s via the compat facade: %w", t, err)
+		}
+		return compatTextDocument(pool, TextPoolKinds[kind]), nil
+	}
+
 	doc := TextPoolKinds[kind]
 	resp, err := c.transport.Request(ctx, t.resource()+"/source/"+doc, &RequestOptions{
 		Method:           http.MethodGet,
@@ -385,21 +400,36 @@ func (c *Client) WriteTextPool(ctx context.Context, target TextPoolTarget, lang 
 	}
 
 	trPlan := c.planTransport(ctx, transport, t.objectURL(), "")
-	lock, err := c.LockObject(ctx, t.resource(), "MODIFY")
-	if err != nil {
-		return plan, fmt.Errorf("locking the text pool of %s: %w", t, err)
+	// 老系统（7.51）没有 textelements 资源，也没有它的锁对象与 PUT；
+	// 兼容路径改为"读-改-整池覆盖写"，不走 ADT 的锁会话，传输归属
+	// 由 ABAP 端的 RPY_TEXTELEMENTS_INSERT 登记。
+	compat, cerr := c.textPoolNeedsCompat(ctx, t)
+	if cerr != nil {
+		return plan, cerr
+	}
+	var lock *LockResult
+	if !compat {
+		var lerr error
+		lock, lerr = c.LockObject(ctx, t.resource(), "MODIFY")
+		if lerr != nil {
+			return plan, fmt.Errorf("locking the text pool of %s: %w", t, lerr)
+		}
 	}
 	unlockCtx := context.WithoutCancel(ctx)
 	unlocked := false
 	unlock := func() {
-		if !unlocked {
+		if lock != nil && !unlocked {
 			unlocked = true
 			_ = c.UnlockObject(unlockCtx, t.resource(), lock.LockHandle)
 		}
 	}
 	defer unlock()
+	corrNr := ""
+	if lock != nil {
+		corrNr = lock.CorrNr
+	}
 	var trNote string
-	if plan.Transport, trNote, err = c.resolveWriteTransportFor(trPlan, transport, lock.CorrNr, "WriteTextPool"); err != nil {
+	if plan.Transport, trNote, err = c.resolveWriteTransportFor(trPlan, transport, corrNr, "WriteTextPool"); err != nil {
 		return plan, err
 	}
 	if trNote != "" {
@@ -407,6 +437,7 @@ func (c *Client) WriteTextPool(ctx context.Context, target TextPoolTarget, lang 
 	}
 
 	plan.Kinds = plan.Kinds[:0]
+	compatChanged := false
 	for _, k := range kinds {
 		d, err := c.readTextDocument(ctx, t, k, lang, true)
 		if err != nil {
@@ -426,6 +457,13 @@ func (c *Client) WriteTextPool(ctx context.Context, target TextPoolTarget, lang 
 		for _, r := range kp.Removed {
 			d.remove(r)
 		}
+		if compat {
+			// 兼容路径：文档已就地更新，整池覆盖写在循环后一次完成
+			// （TEXTPOOL_SET 是覆盖写，不能按 kind 分次提交）。
+			docs[k] = d
+			compatChanged = true
+			continue
+		}
 		params := url.Values{}
 		params.Set("lockHandle", lock.LockHandle)
 		if plan.Transport != "" {
@@ -444,6 +482,19 @@ func (c *Client) WriteTextPool(ctx context.Context, target TextPoolTarget, lang 
 			return plan, fmt.Errorf("writing the %s of %s: %w", TextPoolKinds[k], t, err)
 		}
 		plan.Written += len(kp.Added) + len(kp.Changed) + len(kp.Removed)
+	}
+	if compat {
+		// 整池 RFC 写：ZVSP_COMPAT_751 内部的经典仓库 API 直接写活动
+		// 版本并读回核验，没有 ADT 的"写入→激活"两段式；二读之后若无
+		// 变化则什么都不写。
+		if compatChanged {
+			if werr := c.writeTextPoolCompat(ctx, t, lang, plan.Transport, plan, docs); werr != nil {
+				return plan, werr
+			}
+			plan.Applied = true
+			plan.Written = plan.changes()
+		}
+		return plan, nil
 	}
 	plan.Applied = true
 	if plan.Written == 0 {

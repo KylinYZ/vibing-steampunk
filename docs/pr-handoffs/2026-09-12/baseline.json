@@ -1,0 +1,260 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-12T08:48:53.0853929+08:00",
+  "purpose": "Read-only cross-repository repair handoff; file hashes bind current working-tree reference bytes, not proof of runtime correctness.",
+  "target": {
+    "path": "D:\\MyDev\\SAP\\vibing-steampunk",
+    "head": "21d2f22ec6de4b43f18ff10b2e0d53bfa875ff6b",
+    "preExistingUntracked": [
+      ".claude/settings.local.json",
+      ".codegraph/"
+    ]
+  },
+  "reference": {
+    "path": "D:\\MyDev\\SAP\\mcp-abap-abap-adt-api",
+    "head": "a8cdeda38dc4bbb8a98896e4f42e5925eed3d8ef",
+    "packageVersion": "0.7.0",
+    "dirtyPaths": [
+      "AGENTS.md",
+      "README.zh-CN.md",
+      "docs/npm线上版本迁移指南.md",
+      "docs/使用指南.md",
+      "scripts/focused-entrypoint-smoke.mjs",
+      "scripts/repository-productionization-runtime-smoke.mjs",
+      "scripts/repository-verified-domain-preview.mjs",
+      "src/__tests__/RepositoryObjectCleanupWorkflow.test.ts",
+      "src/__tests__/RepositoryObjectCreationHandlers.test.ts",
+      "src/__tests__/ToolCatalogIntegrity.test.ts",
+      "src/config/ToolProfiles.ts",
+      "src/handlers/RepositoryObjectCreationHandlers.ts",
+      "src/index.ts",
+      "src/safe/RepositoryCreationConfirmationProvider.ts",
+      "src/safe/RepositoryObjectCleanupPlanStore.ts",
+      "src/safe/RepositoryObjectCleanupWorkflow.ts",
+      "src/safe/RepositoryObjectCreationPlanStore.ts",
+      "src/safe/repositoryCreationTypes.ts"
+    ]
+  },
+  "verification": {
+    "referenceJestSuites": 9,
+    "referenceJestTests": 86,
+    "referenceJestResult": "passed",
+    "referenceJestExitCode": 0,
+    "goTestsRun": false,
+    "buildRun": false,
+    "liveSapRun": false,
+    "databaseWriteRun": false
+  },
+  "files": [
+    {
+      "path": "D:\\MyDev\\SAP\\mcp-abap-abap-adt-api\\docs\\evidence\\repository-creation-data-element-real-dev-verified.md",
+      "sha256": "a780d3e762a4eddacc501036253f88728028414f4bd46aa1e82d2b0b1436eca2",
+      "bytes": 2449
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\mcp-abap-abap-adt-api\\docs\\evidence\\repository-creation-ddic-domain-real-dev-verified.md",
+      "sha256": "47f85fae29191466c11c488b585eec3861ce0d77b80d9b3c719f8098774b9dbd",
+      "bytes": 2302
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\mcp-abap-abap-adt-api\\docs\\evidence\\repository-creation-wave3-cds-service-chdo-validation.md",
+      "sha256": "8a3d7ee23d44e9afbc8acae350df5f9b000bfc94c22c7fd265c9cbb622791156",
+      "bytes": 3927
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\mcp-abap-abap-adt-api\\src\\__tests__\\CdsSourceObjectCreationAdapter.test.ts",
+      "sha256": "c9f1a9d29afb616c676367c263a64f1b3e8ea10e278db6736c817b71161eb4ce",
+      "bytes": 13497
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\mcp-abap-abap-adt-api\\src\\__tests__\\ControlledSourceObjectAdt.test.ts",
+      "sha256": "d61720b53132ca2813022976a9a0c3c8fa4f1a18ceedba7f73a5d7cdc8842e6b",
+      "bytes": 13373
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\mcp-abap-abap-adt-api\\src\\adt\\AdtClient.ts",
+      "sha256": "7deb39a988fe8e6d7995b121781620c99ce61d5a455102146041846084ceb45c",
+      "bytes": 60089
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\mcp-abap-abap-adt-api\\src\\adt\\AdtHTTP.ts",
+      "sha256": "b48e282eb5d8f30ce331d1b526b87adb438c81c64f9da5655e2d612942eff4f6",
+      "bytes": 12449
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\mcp-abap-abap-adt-api\\src\\adt\\api\\objectcontents.ts",
+      "sha256": "e2ed3ba351007808fa64e73c3934c11cd0b68e50ff5fb562b0f313b34ce288e6",
+      "bytes": 19177
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\mcp-abap-abap-adt-api\\src\\adt\\api\\objectcreator.ts",
+      "sha256": "a7c9dec7fdd9b43e0ba4d1f2c2f50b1dbdf0cfb25080d3f538cfaa4bb99fb20e",
+      "bytes": 17686
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\mcp-abap-abap-adt-api\\src\\adt\\api\\sourceObjectCreation.ts",
+      "sha256": "500c3bb4454d4eeee41d7de27e425c42081d3b7818a05a04227a236072573970",
+      "bytes": 12836
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\mcp-abap-abap-adt-api\\src\\config\\RuntimeGuardrails.ts",
+      "sha256": "74ad86060d6d732880dc18c48df7a41beb03756911a6fcd9b0bfc1008bfcb18a",
+      "bytes": 3364
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\mcp-abap-abap-adt-api\\src\\config\\SessionResilienceConfig.ts",
+      "sha256": "66e1204adc2be115cc3de9d7f265c265e9083760bc4ff7da6bc6ac59a8ad115a",
+      "bytes": 1123
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\mcp-abap-abap-adt-api\\src\\config\\ToolOperationPolicy.ts",
+      "sha256": "448e4e704abd3cdb0422ed5b36bf0f21a53c1457232d52932fd21f400e326e11",
+      "bytes": 8958
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\mcp-abap-abap-adt-api\\src\\handlers\\DdicHandlers.ts",
+      "sha256": "1ddf0ae168a28e71f7a589d7ce32844dc4a8fee65608101bb9cc4758caa4c000",
+      "bytes": 18085
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\mcp-abap-abap-adt-api\\src\\index.ts",
+      "sha256": "6202d93a19649d69657bd868a83b8079e577768b0f3b5206508d0c72a4ef90ab",
+      "bytes": 48015
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\mcp-abap-abap-adt-api\\src\\lib\\SessionSupervisor.ts",
+      "sha256": "10a892838c282b58e6476561b9d81fa7c8cf02ead9082f8bbb2eb547b81af39a",
+      "bytes": 5853
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\mcp-abap-abap-adt-api\\src\\safe\\AbapChangeWorkflow.ts",
+      "sha256": "e6a3a0078502b95f4479ec59c5b0c5de73de70228c8f0e432aef8e5874051d90",
+      "bytes": 20491
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\mcp-abap-abap-adt-api\\src\\safe\\AbapObjectResolver.ts",
+      "sha256": "5807833a78c5363d0c14877559661187d366a0adc7d5ac1b71eb729ee3836670",
+      "bytes": 7727
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\mcp-abap-abap-adt-api\\src\\safe\\adapters\\DdicPrimitiveCreationAdapter.ts",
+      "sha256": "065329b1a1be547fbd374639f75adbb9081a8db01f5c3b08a345345eb3f13a88",
+      "bytes": 24699
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\mcp-abap-abap-adt-api\\src\\safe\\adapters\\SourceObjectCreationAdapter.ts",
+      "sha256": "74b78dfb423a43dd4b853e21602183460d03b1f0a50b40151c6e0dfdd4d42cee",
+      "bytes": 23272
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\mcp-abap-abap-adt-api\\src\\safe\\RepositoryObjectCleanupWorkflow.ts",
+      "sha256": "232e3d09dbdefc98dd1755667a7faa7d23b28f523654bf463b1b174572e7e090",
+      "bytes": 28202
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\mcp-abap-abap-adt-api\\src\\safe\\RepositoryObjectCreationWorkflow.ts",
+      "sha256": "5c3dd1f3ebea4113af15f5746b2fde6fc444924ff3ea0adb840dcad3d69263ad",
+      "bytes": 10755
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\vibing-steampunk\\agenda\\AGENDA.md",
+      "sha256": "d49c97fd48246cc2effde1ce67fc0c27e16b3999206af3e804f19a541b7fdeca",
+      "bytes": 73983
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\vibing-steampunk\\cmd\\vsp\\cli.go",
+      "sha256": "d185fb9f3c2ccbb5e38d33c30c5008ce215edeec0950c0e7f246615437f0b4a4",
+      "bytes": 20985
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\vibing-steampunk\\cmd\\vsp\\debug_ui.go",
+      "sha256": "e772c6a8e295456d1b35ccb36664b2162afa822de2b8c1a927cedce41985cbc6",
+      "bytes": 13619
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\vibing-steampunk\\cmd\\vsp\\main.go",
+      "sha256": "6fffd62b798b690fc67059e480110046e06e503033065dbaec612f11591e7abd",
+      "bytes": 33787
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\vibing-steampunk\\internal\\mcp\\handlers_crud.go",
+      "sha256": "e3b43a9b4171ef2d4b2bc1c5f7775cc62d8d3637a6668644636f91305fc89845",
+      "bytes": 20928
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\vibing-steampunk\\internal\\mcp\\handlers_deploy.go",
+      "sha256": "b62354c0068c62b19e18c9415d211429610f58b96b250671423ea66211cbbdfd",
+      "bytes": 11830
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\vibing-steampunk\\internal\\mcp\\lock_scope.go",
+      "sha256": "52c5a41b9d92a5cbea077511ffac6eaeef915701660920aa4b0290260126a6fd",
+      "bytes": 2815
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\vibing-steampunk\\pkg\\adt\\client.go",
+      "sha256": "30aa5265b2e1bdd51284d4175dda42b9ad62ed394a2734db26ceb0b5777d41b6",
+      "bytes": 90685
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\vibing-steampunk\\pkg\\adt\\cookies.go",
+      "sha256": "536d11a817e6923503b1777519410e2a9d4b26a61a97b32315b257a627b131ec",
+      "bytes": 1688
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\vibing-steampunk\\pkg\\adt\\crud.go",
+      "sha256": "083b5f98374b6072c46bf41245cd32fe4827a79bfd75c26db72a8c1b85d65566",
+      "bytes": 57499
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\vibing-steampunk\\pkg\\adt\\http.go",
+      "sha256": "146cc7e6a328da032484a8a5529e6893045202a567103e31f312410239eec6f5",
+      "bytes": 36387
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\vibing-steampunk\\pkg\\adt\\i18n.go",
+      "sha256": "912dcfb76674229d48f3e8efc20b2d90ae134d3e9bd3b59d16a90dfd91be0162",
+      "bytes": 16301
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\vibing-steampunk\\pkg\\adt\\lock_release.go",
+      "sha256": "73281edd0ffffe2895fa9c1973eab18ec1e141d08163756109f68b99947c6c65",
+      "bytes": 2986
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\vibing-steampunk\\pkg\\adt\\mutation_gate_marker.go",
+      "sha256": "b5c1f1211767fd2bd3fc0b542858be6e84b2ebe32918450789f9149a23713998",
+      "bytes": 4360
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\vibing-steampunk\\pkg\\adt\\mutation_gate.go",
+      "sha256": "80cea90e67280562ad03fc8712c129c8d37478a1f8fab23f11cef14b2c8d1b4d",
+      "bytes": 5780
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\vibing-steampunk\\pkg\\adt\\session_affinity_test.go",
+      "sha256": "9bba47c2808000ae44ca555ddabb2cbb50563c00e67826dcb0c0a48529865bfe",
+      "bytes": 25858
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\vibing-steampunk\\pkg\\adt\\workflows_deploy.go",
+      "sha256": "263278cef7de943d08d07e075cb9d5e441cb543bf20e39a3421afe10b618c813",
+      "bytes": 24545
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\vibing-steampunk\\pkg\\adt\\workflows_edit.go",
+      "sha256": "8baf2fc57aa9d54dedbdf46ce1a186132708ccf6561a962cdd52c5768c1a1766",
+      "bytes": 18732
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\vibing-steampunk\\pkg\\adt\\workflows_execute.go",
+      "sha256": "d8ab180cd5fff536c7b999a5176f6347623e3921a4259b6ca1f7e716db0dbc07",
+      "bytes": 20950
+    },
+    {
+      "path": "D:\\MyDev\\SAP\\vibing-steampunk\\pkg\\adt\\workflows_source.go",
+      "sha256": "d0ca33d8a1969d842d98b1ea96070cdebd2be54156523ee64be7eb64b426047d",
+      "bytes": 57986
+    }
+  ]
+}
