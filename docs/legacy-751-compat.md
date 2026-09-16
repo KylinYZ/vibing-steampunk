@@ -92,11 +92,13 @@ The Go side is covered by unit tests: fallback triggers only on 404, field
 translation (built-ins, aliases, data-element fallback, client field
 prepending), full-pool merge semantics, and result/error interpretation.
 
-The ABAP module itself has not been deployed or executed against a real 7.51
-system yet. The previous deployment attempt was automatically compensated
-(function group and module deleted) because VSP's controlled ADT function
-creator could not materialize function-module interface parameters; the
-interface is now deliberately scalar-only (plus the two `TEXTPOOL` tables) so
-a manual SE37 deployment is straightforward. Deploy via SE37 or abapGit, then
-test with a disposable `Z/Y` program and table in a dedicated DEV transport
-before relying on it.
+The ABAP module itself has not been deployed to a real 7.51 system yet. A
+previous attempt via the controlled creation planner was automatically
+compensated (function group and module deleted) because that planner cannot
+materialize function-module interface parameters; the recommended deployment
+route is now VSP's `CreateObject` workflow with `rfc_enabled=true` and the
+signed source (see the facade README) — the ADT model defines a function
+module's interface in its source, so no hand-built SE37 shell is needed.
+Then verify with `rfc describe ZVSP_COMPAT_751`, and exercise the facade with
+a disposable `Z/Y` program and table in a dedicated DEV transport before
+relying on it.

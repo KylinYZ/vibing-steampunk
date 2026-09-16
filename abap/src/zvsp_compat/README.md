@@ -16,7 +16,47 @@ VSP（Go 端）在 ADT 返回 404 时自动改走本门面：`pkg/adt` 的
 `CompatFallback` 接口在 `internal/mcp` 里被接到经典 RFC 连接上，
 `CreateTable` 与文本池读写无需换工具、无需换参数。
 
-## SE37 接口
+## 部署
+
+### 方式一（推荐）：VSP 一条命令自动部署
+
+ADT 模型里函数模块的接口就定义在源码签名中，因此 VSP 的
+`CreateObject` 工作流可以完整创建（创建 → 置 RFC 标志 → 写签名源码 → 激活），
+不需要手工 SE37：
+
+1. 传输请求（没有可用的就先建一个）：
+
+   ```jsonc
+   SAP(action="system", params={"type":"create_transport", "description":"ZVSP_COMPAT facade", "package":"<开发包>"})
+   ```
+
+2. 建函数组：
+
+   ```jsonc
+   CreateObject(objectType="FUGR", name="ZVSP_COMPAT", description="VSP 7.51 compatibility facade",
+                package_name="<开发包>", transport="<请求号>")
+   ```
+
+3. 建函数模块（`rfc_enabled` 会经 SetFunctionModuleProcessingType 单独置位；
+   `source` 的签名就是接口定义）：
+
+   ```jsonc
+   CreateObject(objectType="FUGR/FF", name="ZVSP_COMPAT_751", parent_name="ZVSP_COMPAT",
+                rfc_enabled=true, package_name="<开发包>", transport="<请求号>",
+                source=<zvsp_compat.fugr.zvsp_compat_751.func.abap 的完整内容>)
+   ```
+
+4. 验证（接口参数应与下表一致）：
+
+   ```jsonc
+   SAP(action="rfc", target="ZVSP_COMPAT_751", params={"op":"describe"})
+   ```
+
+`DeployFromFile` 也能部署本文件（文件名已符合 `{fugr}.fugr.{func}.func.abap`
+约定），但那条通用路径不设置 RFC-enabled 标志——用它就要事后在 SE37 勾一次
+"远程可调用的模块"，所以推荐上面的 `CreateObject` + `rfc_enabled` 组合。
+
+### 方式二（备选）：手工 SE37
 
 全部参数为标量或两个全系统稳定的标准结构（`TEXTPOOL`：`ID/KEY/ENTRY`），
 手工逐个建立即可：
@@ -41,10 +81,11 @@ VSP（Go 端）在 ADT 返回 404 时自动改走本门面：`pkg/adt` 的
 | Tables | `I_TEXTPOOL` | `TEXTPOOL` | 完整文本池（SET 的输入） |
 | Tables | `E_TEXTPOOL` | `TEXTPOOL` | 完整文本池（GET 的输出、SET 的读回） |
 
-部署后把处理类型改为 **远程可调用的模块**（Remote-Enabled Module），
-然后激活。全部逻辑内联在函数体内：函数组里不需要 FORM 例程或全局数据。
+手工部署时，建完参数后把处理类型改为 **远程可调用的模块**
+（Remote-Enabled Module），然后激活。全部逻辑内联在函数体内：函数组里
+不需要 FORM 例程或全局数据。
 VSP 部署源文件为
-[`zvsp_compat.fugr.zvsp_compat_751.abap`](zvsp_compat.fugr.zvsp_compat_751.abap)。
+[`zvsp_compat.fugr.zvsp_compat_751.func.abap`](zvsp_compat.fugr.zvsp_compat_751.func.abap)。
 
 ## 字段 JSON 协议（`I_FIELDS_JSON`）
 
@@ -88,7 +129,6 @@ VSP 部署源文件为
 
 ## 部署限制
 
-VSP 的受控 ADT 函数创建器能创建模块与源码，但还不能把接口声明物化为
-SE37 参数（这是上一次部署尝试失败并被自动补偿的原因）。本接口已刻意
-标量化，手工 SE37 建参数约十余项，按上表录入即可。函数接口参数创建
-落地后，可改走 VSP 的函数模块创建工作流。
+VSP 的受控创建器（preview/apply 计划体系）能创建模块与源码，但还不能把
+接口声明物化为 SE37 参数，且强制要求既有传输请求——这正是推荐走
+`CreateObject` 工作流（方式一）的原因：它不受该限制。
