@@ -276,8 +276,9 @@ func (t *Transport) request(ctx context.Context, path string, opts *RequestOptio
 		token := t.getCSRFToken()
 		if token == "" {
 			// Fetch CSRF token first, on the same kind of session the request
-			// itself will use (issue #91).
-			if err := t.fetchCSRFTokenWithReauth(ctx, !t.config.ReauthReadOnly, opts.Stateful); err != nil {
+			// itself will use (issue #91). Request-bound, so the probe mirrors
+			// this request's session type exactly.
+			if err := t.fetchCSRFTokenWithReauth(ctx, !t.config.ReauthReadOnly, opts.Stateful, true); err != nil {
 				return nil, fmt.Errorf("fetching CSRF token: %w", err)
 			}
 			token = t.getCSRFToken()
@@ -330,8 +331,9 @@ func (t *Transport) request(ctx context.Context, path string, opts *RequestOptio
 		// Try to refresh CSRF token and retry once. The refresh has to stay on
 		// the request's own session kind: for a stateful write it lands between
 		// the failed attempt and the retry, and an unmarked probe there retires
-		// the session the lock handle belongs to (issue #91).
-		if err := t.fetchCSRFTokenWithReauth(ctx, !t.config.ReauthReadOnly, opts.Stateful); err != nil {
+		// the session the lock handle belongs to (issue #91). Request-bound for
+		// the same reason.
+		if err := t.fetchCSRFTokenWithReauth(ctx, !t.config.ReauthReadOnly, opts.Stateful, true); err != nil {
 			return nil, fmt.Errorf("refreshing CSRF token: %w", err)
 		}
 

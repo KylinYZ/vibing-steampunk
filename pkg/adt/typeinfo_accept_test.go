@@ -18,7 +18,7 @@ import (
 const dataElementsAcceptV2 = "application/vnd.sap.adt.dataelements.v2+xml"
 
 func TestGetTypeInfo_SendsVersionedAccept(t *testing.T) {
-	xmlResp := `<?xml version="1.0" encoding="utf-8"?><blue:wbobj adtcore:name="APC_CONNECTION_ID" adtcore:type="DTEL/DE" adtcore:description="Connection ID" xmlns:blue="http://www.sap.com/wbobj/dictionary/dtel" xmlns:adtcore="http://www.sap.com/adt/core"><dtel:dataElement xmlns:dtel="http://www.sap.com/adt/dictionary/dataelements"><dtel:typeKind>domain</dtel:typeKind></dtel:dataElement></blue:wbobj>`
+	xmlResp := `<?xml version="1.0" encoding="utf-8"?><blue:wbobj adtcore:name="APC_CONNECTION_ID" adtcore:type="DTEL/DE" adtcore:description="Connection ID" xmlns:blue="http://www.sap.com/wbobj/dictionary/dtel" xmlns:adtcore="http://www.sap.com/adt/core"><dtel:dataElement xmlns:dtel="http://www.sap.com/adt/dictionary/dataelements"><dtel:typeKind>domain</dtel:typeKind><dtel:typeName>AMC_CHANNEL_ID</dtel:typeName><dtel:dataType>SSTRING</dtel:dataType><dtel:dataTypeLength>000140</dtel:dataTypeLength><dtel:dataTypeDecimals>000000</dtel:dataTypeDecimals></dtel:dataElement></blue:wbobj>`
 
 	mock := &mockTransportClient{
 		responses: map[string]*http.Response{

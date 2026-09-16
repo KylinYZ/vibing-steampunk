@@ -1431,8 +1431,11 @@ func (c *Client) GetTransaction(ctx context.Context, tcode string) (*Transaction
 //	DMBTR              domain              AFLE13D2O16N_TO_23D2O30N  CURR     23  2
 //	MENGE_D            domain              MENG13                    QUAN     13  3
 type TypeInfo struct {
-	Name        string
-	Type        string
+	Name string
+	Type string
+	// Domain is set only when the data element refers to a domain. It is an
+	// additive field: Type continues to mean the resolved ABAP data type.
+	Domain      string
 	Description string
 	Length      int
 	Decimals    int
@@ -1445,7 +1448,7 @@ type TypeInfo struct {
 func (c *Client) GetTypeInfo(ctx context.Context, typeName string) (*TypeInfo, error) {
 	typeName = strings.ToUpper(typeName)
 
-	resp, err := c.transport.Request(ctx, fmt.Sprintf("/sap/bc/adt/ddic/dataelements/%s", typeName), &RequestOptions{
+	resp, err := c.transport.Request(ctx, fmt.Sprintf("/sap/bc/adt/ddic/dataelements/%s", url.PathEscape(typeName)), &RequestOptions{
 		Method: http.MethodGet,
 		// The versioned vocabulary type, not application/xml. This endpoint
 		// refuses the generic one with 406 "The message content is not
@@ -1459,38 +1462,40 @@ func (c *Client) GetTypeInfo(ctx context.Context, typeName string) (*TypeInfo, e
 		return nil, fmt.Errorf("getting type info: %w", err)
 	}
 
-	// The type and the lengths are CHILD ELEMENTS of dtel:dataElement, not
-	// attributes of the root. The previous mapping read them as root attributes
-	// and so returned zero for every element ever — invisibly, because the 406
-	// above meant it never got as far as parsing. Lengths arrive zero-padded to
-	// six digits ("000032", "000002"); ParseInt handles the padding.
-	type typeData struct {
-		Name        string `xml:"name,attr"`
-		ObjectType  string `xml:"type,attr"`
-		Description string `xml:"description,attr"`
-		DataElement struct {
-			TypeKind string `xml:"typeKind"`
-			TypeName string `xml:"typeName"`
-			DataType string `xml:"dataType"`
-			Length   int    `xml:"dataTypeLength"`
-			Decimals int    `xml:"dataTypeDecimals"`
-		} `xml:"dataElement"`
+	// 解析走 fix-153 引入的共享 parser（root/必填校验、零填充数字解析），
+	// 字段映射保持两侧语义的超集：Domain/TypeKind/DomainName/ObjectType。
+	doc, err := parseDataElementDoc(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("parsing type info: %w", err)
 	}
-
-	var td typeData
-	if err := xml.Unmarshal(resp.Body, &td); err != nil {
+	if strings.TrimSpace(doc.DataElement.DataType) == "" {
+		return nil, fmt.Errorf("parsing type info: data element document is missing dataType")
+	}
+	length, err := parseDataElementNumber("dataTypeLength", doc.DataElement.DataTypeLength)
+	if err != nil {
+		return nil, fmt.Errorf("parsing type info: %w", err)
+	}
+	decimals, err := parseDataElementNumber("dataTypeDecimals", doc.DataElement.DataTypeDecimals)
+	if err != nil {
 		return nil, fmt.Errorf("parsing type info: %w", err)
 	}
 
+	typeKind := strings.TrimSpace(doc.DataElement.TypeKind)
+	domain := ""
+	if strings.EqualFold(typeKind, "domain") {
+		domain = strings.TrimSpace(doc.DataElement.TypeName)
+	}
+
 	return &TypeInfo{
-		Name:        td.Name,
-		Type:        td.DataElement.DataType,
-		Description: td.Description,
-		Length:      td.DataElement.Length,
-		Decimals:    td.DataElement.Decimals,
-		TypeKind:    td.DataElement.TypeKind,
-		DomainName:  td.DataElement.TypeName,
-		ObjectType:  td.ObjectType,
+		Name:        doc.Name,
+		Type:        doc.DataElement.DataType,
+		Domain:      domain,
+		Description: doc.Description,
+		Length:      length,
+		Decimals:    decimals,
+		TypeKind:    typeKind,
+		DomainName:  domain,
+		ObjectType:  doc.ObjectType,
 	}, nil
 }
 
