@@ -269,24 +269,7 @@ func (p *FeatureProber) probeAbapGit(ctx context.Context) (bool, string, error) 
 
 // probeRAP checks if RAP development tools are available
 func (p *FeatureProber) probeRAP(ctx context.Context) (bool, string, error) {
-	// Check if DDLS endpoint exists
-	resp, err := p.client.transport.Request(ctx, "/sap/bc/adt/ddic/ddl/sources", &RequestOptions{
-		Method: http.MethodOptions,
-	})
-	if err != nil {
-		// Check if it's a 404 vs connection error
-		if strings.Contains(err.Error(), "404") {
-			return false, "DDLS endpoint not available", nil
-		}
-		return false, "", err
-	}
-
-	// OPTIONS returning 200 or 405 means endpoint exists
-	if resp.StatusCode == 200 || resp.StatusCode == 405 {
-		return true, "RAP endpoints available", nil
-	}
-
-	return false, "RAP endpoints not responding", nil
+	return p.probeDiscoveryCollection(ctx, "/sap/bc/adt/ddic/ddl/sources", "RAP endpoints")
 }
 
 // probeAMDP checks if AMDP debugging is available
@@ -326,42 +309,29 @@ func (p *FeatureProber) probeAMDP(ctx context.Context) (bool, string, error) {
 
 // probeUI5 checks if UI5/Fiori BSP management is available
 func (p *FeatureProber) probeUI5(ctx context.Context) (bool, string, error) {
-	// Check if UI5 repository endpoint exists
-	resp, err := p.client.transport.Request(ctx, "/sap/bc/adt/filestore/ui5-bsp", &RequestOptions{
-		Method: http.MethodOptions,
-	})
-	if err != nil {
-		if strings.Contains(err.Error(), "404") {
-			return false, "UI5 BSP endpoint not available", nil
-		}
-		return false, "", err
-	}
-
-	if resp.StatusCode == 200 || resp.StatusCode == 405 {
-		return true, "UI5 BSP repository available", nil
-	}
-
-	return false, "UI5 BSP not responding", nil
+	return p.probeDiscoveryCollection(ctx, "/sap/bc/adt/filestore/ui5-bsp", "UI5 BSP repository")
 }
 
 // probeTransport checks if CTS transport management is available
 func (p *FeatureProber) probeTransport(ctx context.Context) (bool, string, error) {
-	// Check if transport endpoint exists
-	resp, err := p.client.transport.Request(ctx, "/sap/bc/adt/cts/transports", &RequestOptions{
-		Method: http.MethodOptions,
+	return p.probeDiscoveryCollection(ctx, transportRequestsPath, "CTS transport management")
+}
+
+// probeDiscoveryCollection uses SAP's service document instead of OPTIONS.
+// Several real ADT systems publish a collection but reject OPTIONS with 400, so
+// treating that response as absence made capability detection release-dependent.
+func (p *FeatureProber) probeDiscoveryCollection(ctx context.Context, collection, label string) (bool, string, error) {
+	resp, err := p.client.transport.Request(ctx, "/sap/bc/adt/discovery", &RequestOptions{
+		Method: http.MethodGet,
+		Accept: "application/atomsvc+xml, application/xml, */*",
 	})
 	if err != nil {
-		if strings.Contains(err.Error(), "404") {
-			return false, "CTS endpoint not available", nil
-		}
 		return false, "", err
 	}
-
-	if resp.StatusCode == 200 || resp.StatusCode == 405 {
-		return true, "CTS transport management available", nil
+	if strings.Contains(string(resp.Body), `href="`+collection+`"`) {
+		return true, label + " available", nil
 	}
-
-	return false, "CTS not responding", nil
+	return false, label + " endpoint not advertised", nil
 }
 
 // FeatureSummary returns a human-readable summary of all features

@@ -144,6 +144,9 @@ func TestTransport_Request_CSRFToken(t *testing.T) {
 	if csrfReq.Header.Get("X-CSRF-Token") != "fetch" {
 		t.Error("First request should have X-CSRF-Token: fetch")
 	}
+	if got := csrfReq.Header.Get("X-sap-adt-sessiontype"); got != "stateless" {
+		t.Errorf("CSRF fetch session type = %q, want stateless to match the POST", got)
+	}
 
 	// Second request should include CSRF token
 	postReq := mock.requests[1]

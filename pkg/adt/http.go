@@ -316,7 +316,7 @@ func (t *Transport) request(ctx context.Context, path string, opts *RequestOptio
 	if resp.StatusCode < 400 && t.canReauth() && t.redirectedAwayFromSAP(resp) {
 		t.setCSRFToken("")
 		t.setSessionID("")
-		if err := t.callReauthFunc(ctx); err != nil {
+		if err := t.callReauthFunc(ctx, opts.Stateful, true); err != nil {
 			return nil, fmt.Errorf("re-authenticating after an SSO redirect on %s: %w", path, err)
 		}
 		return t.retryRequest(ctx, path, opts)
@@ -382,7 +382,7 @@ func (t *Transport) request(ctx context.Context, path string, opts *RequestOptio
 
 			if !t.config.HasBasicAuth() && t.config.ReauthFunc != nil {
 				// Cookie/SAML auth: re-run full auth dance to get fresh cookies.
-				if err := t.callReauthFunc(ctx); err != nil {
+				if err := t.callReauthFunc(ctx, opts.Stateful, true); err != nil {
 					return nil, fmt.Errorf("re-authenticating after 401 on %s: %w (original error: %v)", path, err, apiErr)
 				}
 			} else {
@@ -476,7 +476,7 @@ func (t *Transport) retryRequest(ctx context.Context, path string, opts *Request
 // exists to prevent. Let GET have its turn; if it is also forbidden, the error
 // below says so.
 func (t *Transport) fetchCSRFToken(ctx context.Context) error {
-	return t.fetchCSRFTokenFor(ctx, false)
+	return t.fetchCSRFTokenWithReauth(ctx, true, false, false)
 }
 
 // fetchCSRFTokenFor fetches a token on behalf of a request whose statefulness
@@ -490,7 +490,7 @@ func (t *Transport) fetchCSRFToken(ctx context.Context) error {
 // just been thrown away (issue #91). So the probe inherits the in-flight
 // request's statefulness rather than only the client-wide default.
 func (t *Transport) fetchCSRFTokenFor(ctx context.Context, stateful bool) error {
-	return t.fetchCSRFTokenWithReauth(ctx, true, stateful)
+	return t.fetchCSRFTokenWithReauth(ctx, true, stateful, true)
 }
 
 // fetchCSRFTokenWithReauth fetches a token, optionally recovering an expired
@@ -498,8 +498,8 @@ func (t *Transport) fetchCSRFTokenFor(ctx context.Context, stateful bool) error 
 //
 // allowReauth exists to break a cycle: re-authenticating ends with a token
 // fetch of its own, and that fetch must not start another re-authentication.
-func (t *Transport) fetchCSRFTokenWithReauth(ctx context.Context, allowReauth bool, stateful bool) error {
-	token, status, redirected, err := t.probeCSRFToken(ctx, http.MethodHead, stateful)
+func (t *Transport) fetchCSRFTokenWithReauth(ctx context.Context, allowReauth bool, stateful bool, requestBound bool) error {
+	token, status, redirected, err := t.probeCSRFToken(ctx, http.MethodHead, stateful, requestBound)
 	if err != nil {
 		return err
 	}
@@ -509,7 +509,7 @@ func (t *Transport) fetchCSRFTokenWithReauth(ctx context.Context, allowReauth bo
 		}
 		var getStatus int
 		var getRedirected bool
-		token, getStatus, getRedirected, err = t.probeCSRFToken(ctx, http.MethodGet, stateful)
+		token, getStatus, getRedirected, err = t.probeCSRFToken(ctx, http.MethodGet, stateful, requestBound)
 		if err != nil {
 			return err
 		}
@@ -528,14 +528,14 @@ func (t *Transport) fetchCSRFTokenWithReauth(ctx context.Context, allowReauth bo
 				if t.config.Verbose {
 					fmt.Fprintf(os.Stderr, "[AUTH] session looks expired — %s; re-authenticating\n", reason)
 				}
-				if err := t.callReauthFunc(ctx); err != nil {
+				if err := t.callReauthFunc(ctx, stateful, requestBound); err != nil {
 					return fmt.Errorf("re-authenticating (%s): %w", reason, err)
 				}
 				// callReauthFunc ends by fetching a token with the new session.
 				if isCSRFToken(t.getCSRFToken()) {
 					return nil
 				}
-				return t.fetchCSRFTokenWithReauth(ctx, false, stateful)
+				return t.fetchCSRFTokenWithReauth(ctx, false, stateful, requestBound)
 			}
 			switch getStatus {
 			case http.StatusUnauthorized:
@@ -555,7 +555,7 @@ func (t *Transport) fetchCSRFTokenWithReauth(ctx context.Context, allowReauth bo
 // probeCSRFToken asks /core/discovery for a token with the given method and
 // returns the token (empty when the server did not supply one), the status, and
 // whether the answer came from somewhere other than the SAP host.
-func (t *Transport) probeCSRFToken(ctx context.Context, method string, stateful bool) (token string, status int, redirected bool, err error) {
+func (t *Transport) probeCSRFToken(ctx context.Context, method string, stateful bool, requestBound bool) (token string, status int, redirected bool, err error) {
 	reqURL, err := t.buildURL("/sap/bc/adt/core/discovery", nil)
 	if err != nil {
 		return "", 0, false, fmt.Errorf("building URL: %w", err)
@@ -571,12 +571,14 @@ func (t *Transport) probeCSRFToken(ctx context.Context, method string, stateful 
 	t.addCookies(req)
 	req.Header.Set("X-CSRF-Token", "fetch")
 	req.Header.Set("Accept", "*/*")
-	// Only ever *add* the stateful marker; never stamp an explicit "stateless"
-	// here. The keep-alive ping goes through this same probe (Ping ->
-	// fetchCSRFToken), and an explicitly stateless keep-alive would retire the
-	// session on a timer — the very failure this is guarding against.
+	// A token belongs to the ADT session type which minted it. Request-bound
+	// probes therefore mirror the caller exactly, including stateless. The
+	// keep-alive path is deliberately unbound, since an explicitly stateless
+	// ping would retire the session it is supposed to preserve.
 	if stateful || t.config.SessionType == SessionStateful {
 		req.Header.Set("X-sap-adt-sessiontype", "stateful")
+	} else if requestBound {
+		req.Header.Set("X-sap-adt-sessiontype", "stateless")
 	}
 
 	// Session-holding proxy chain: open a fresh stateful context with an
@@ -918,7 +920,7 @@ const reauthTimeout = 30 * time.Second
 // callReauthFunc invokes config.ReauthFunc with stampede protection.
 // Multiple goroutines hitting 401 simultaneously will serialize through the mutex;
 // the first one performs the re-auth, subsequent ones within the cooldown window skip it.
-func (t *Transport) callReauthFunc(ctx context.Context) error {
+func (t *Transport) callReauthFunc(ctx context.Context, stateful bool, requestBound bool) error {
 	t.reauthMu.Lock()
 	defer t.reauthMu.Unlock()
 
@@ -953,7 +955,7 @@ func (t *Transport) callReauthFunc(ctx context.Context) error {
 	// goroutine should retry rather than hitting the cooldown skip.
 	// Re-auth establishes a brand-new session; there is no lock window to
 	// preserve across it, so this stays on the client-wide default.
-	if err := t.fetchCSRFTokenWithReauth(reauthCtx, false, false); err != nil {
+	if err := t.fetchCSRFTokenWithReauth(reauthCtx, false, stateful, requestBound); err != nil {
 		return err
 	}
 	t.lastReauth = time.Now()
