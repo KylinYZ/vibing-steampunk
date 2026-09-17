@@ -21,7 +21,7 @@ import (
 	"github.com/oisee/vibing-steampunk/pkg/adt"
 	"github.com/oisee/vibing-steampunk/pkg/saprfc"
 
-	openrfc "github.com/oisee/open-rfc-go/rfc"
+	openrfc "github.com/KylinYZ/open-rfc-go/rfc"
 )
 
 // debugCallTimeout has to outlast a blocking listener, which is a request that

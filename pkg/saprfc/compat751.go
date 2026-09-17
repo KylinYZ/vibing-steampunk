@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/oisee/open-rfc-go/rfc"
+	"github.com/KylinYZ/open-rfc-go/rfc"
 )
 
 // --- ZVSP_COMPAT_751 门面的 Go 侧驱动 ----------------------------------------

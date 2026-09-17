@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/oisee/open-rfc-go/rfc"
+	"github.com/KylinYZ/open-rfc-go/rfc"
 )
 
 // The debugger's server-side registry is three ordinary transparent tables, so

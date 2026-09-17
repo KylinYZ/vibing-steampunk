@@ -3,7 +3,7 @@
 Design / ideation report, 2026-08-20. Grounded in the code of both repositories
 and, where marked ✅, **verified live** against the A4H test system
 (`SAP_BASIS 758`, kernel `793`, HDB, code page `4103`, `RFCPROTO 011`) over the
-SDK-free [open-rfc-go](https://github.com/oisee/open-rfc-go) client on the same
+SDK-free [open-rfc-go](https://github.com/KylinYZ/open-rfc-go) client on the same
 day. Nothing here has been implemented; this is the ranked case for what to
 build next, including the ideas that should **not** be built.
 

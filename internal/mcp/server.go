@@ -16,7 +16,7 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
-	openrfc "github.com/oisee/open-rfc-go/rfc"
+	openrfc "github.com/KylinYZ/open-rfc-go/rfc"
 	"github.com/oisee/vibing-steampunk/pkg/adt"
 )
 

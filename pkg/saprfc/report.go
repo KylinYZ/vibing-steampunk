@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/oisee/open-rfc-go/rfc"
+	"github.com/KylinYZ/open-rfc-go/rfc"
 )
 
 // Running a report is the classic thing ADT cannot do: the APC WebSocket forbids

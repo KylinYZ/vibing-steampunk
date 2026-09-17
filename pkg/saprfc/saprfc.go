@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/oisee/open-rfc-go/rfc"
+	"github.com/KylinYZ/open-rfc-go/rfc"
 )
 
 // Params is a resolved RFC destination.

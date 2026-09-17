@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/oisee/open-rfc-go/rfc"
+	"github.com/KylinYZ/open-rfc-go/rfc"
 	"github.com/oisee/vibing-steampunk/pkg/adt"
 )
 

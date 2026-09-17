@@ -572,12 +572,12 @@ rather than stopping, which is why a recording ends with an explicit `exit`
 record instead of an error.
 
 The write-up, with everything that had to be learned on the way:
-[`reports/debugger-over-rfc.md`](https://github.com/oisee/open-rfc-go/blob/main/reports/debugger-over-rfc.md).
+[`reports/debugger-over-rfc.md`](https://github.com/KylinYZ/open-rfc-go/blob/main/reports/debugger-over-rfc.md).
 
 ### Classic RFC — Call Any Function Module, No SAP SDK
 
 vsp now speaks **classic RFC** next to ADT, through the pure-Go, SDK-free
-[open-rfc-go](https://github.com/oisee/open-rfc-go) client — no NW RFC SDK, no native
+[open-rfc-go](https://github.com/KylinYZ/open-rfc-go) client — no NW RFC SDK, no native
 library, no cgo. Same system, second protocol: ADT reads and writes code, RFC calls
 the business logic.
 

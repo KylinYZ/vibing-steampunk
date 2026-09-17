@@ -5,7 +5,7 @@
 ## Classic RFC (`vsp rfc`)
 
 Calls RFC-enabled function modules over the SAP gateway using the SDK-free
-[open-rfc-go](https://github.com/oisee/open-rfc-go) client — no NW RFC SDK, no cgo.
+[open-rfc-go](https://github.com/KylinYZ/open-rfc-go) client — no NW RFC SDK, no cgo.
 
 | Command | Purpose |
 |---|---|

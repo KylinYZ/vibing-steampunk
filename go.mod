@@ -3,12 +3,12 @@ module github.com/oisee/vibing-steampunk
 go 1.26
 
 require (
+	github.com/KylinYZ/open-rfc-go v0.0.0-20260917075902-ac5994b72894
 	github.com/chromedp/cdproto v0.0.0-20250803210736-d308e07a266d
 	github.com/chromedp/chromedp v0.14.2
 	github.com/gorilla/websocket v1.5.3
 	github.com/joho/godotenv v1.5.1
 	github.com/mark3labs/mcp-go v0.47.0
-	github.com/oisee/open-rfc-go v0.0.0-20260820234724-6ef4d9eeb9cd
 	github.com/spf13/cobra v1.10.1
 	github.com/spf13/viper v1.21.0
 	github.com/tetratelabs/wazero v1.11.0
@@ -48,5 +48,3 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 )
-
-replace github.com/oisee/open-rfc-go => ../open-rfc-go

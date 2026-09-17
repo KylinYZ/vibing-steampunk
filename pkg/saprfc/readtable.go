@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/oisee/open-rfc-go/rfc"
+	"github.com/KylinYZ/open-rfc-go/rfc"
 )
 
 // optionsLineLen is the width of RFC_READ_TABLE's OPTIONS-TEXT field (RFC_DB_OPT

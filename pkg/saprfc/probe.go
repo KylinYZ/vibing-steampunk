@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/oisee/open-rfc-go/rfc"
+	"github.com/KylinYZ/open-rfc-go/rfc"
 )
 
 // Probe is a fingerprint of a system, gathered over classic RFC. It answers the
