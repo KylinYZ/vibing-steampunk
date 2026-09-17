@@ -103,7 +103,10 @@ func Resolve(in Input) (Params, error) {
 		port = 3300 + n // the instance's gateway
 	}
 
-	lang := strings.ToUpper(firstNonEmpty(in.Language, "EN"))
+	lang := strings.TrimSpace(firstNonEmpty(in.Language, "EN"))
+	if lang == "" {
+		lang = "E"
+	}
 	// RFC logon may differ from the ADT logon: an explicit flag wins, then the
 	// system's rfc_user/rfc_password (which already fall back to SAP_USER/
 	// SAP_PASSWORD), then the ADT credentials for the same system.
@@ -119,7 +122,7 @@ func Resolve(in Input) (Params, error) {
 		Client:   firstNonEmpty(in.Client, "001"),
 		User:     user,
 		Password: Secret(password),
-		Language: lang[:1],
+		Language: lang,
 	}, nil
 }
 
