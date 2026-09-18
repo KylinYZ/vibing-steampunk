@@ -296,3 +296,23 @@ func TestServerCookiesDoNotIntroduceNewOnes(t *testing.T) {
 		t.Errorf("cookies = %v, want only the one held", cfg.Cookies)
 	}
 }
+
+func TestAdoptServerCookiesPreservesHTTPBasicSAPSession(t *testing.T) {
+	cfg := NewConfig("http://sap.example", "user", "password")
+	transport := NewTransportWithClient(cfg, &mockHTTPClient{})
+	req, err := http.NewRequest(http.MethodGet, "http://sap.example/sap/bc/adt/core/discovery", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := &http.Response{Request: req, Header: http.Header{}}
+	resp.Header.Add("Set-Cookie", "SAP_SESSIONID_DEV_300=session; Path=/; Secure")
+	resp.Header.Add("Set-Cookie", "sap-usercontext=sap-client=300; Path=/")
+
+	transport.adoptServerCookies(resp)
+	if got := cfg.Cookies["SAP_SESSIONID_DEV_300"]; got != "session" {
+		t.Errorf("SAP session cookie = %q, want session", got)
+	}
+	if got := cfg.Cookies["sap-usercontext"]; got != "sap-client=300" {
+		t.Errorf("user context cookie = %q, want sap-client=300", got)
+	}
+}

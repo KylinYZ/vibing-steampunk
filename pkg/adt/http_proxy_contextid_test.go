@@ -104,7 +104,7 @@ func TestProxyContextIDGuard_SkippedWhenJarHasCookies(t *testing.T) {
 
 func TestProxyContextIDGuard_CSRFFetchHealsWithStatefulEmptyContext(t *testing.T) {
 	mock := &mockHTTPClient{responses: []*http.Response{
-		newMockResponse(400, "", map[string]string{"X-CSRF-Token": "tok"}), //nolint:bodyclose // HEAD /core/discovery; mock response, drained and closed by Transport.Request
+		newMockResponse(200, "", map[string]string{"X-CSRF-Token": "tok"}), //nolint:bodyclose // HEAD /core/discovery; mock response, drained and closed by Transport.Request
 		newMockResponse(200, "OK", nil),                                    //nolint:bodyclose // POST; mock response, drained and closed by Transport.Request
 	}}
 	cfg := NewConfig("https://sap.example.com", "u", "p", WithProxyContextIDGuard())
@@ -134,7 +134,7 @@ func TestProxyContextIDGuard_CSRFFetchHealsWithStatefulEmptyContext(t *testing.T
 func TestProxyContextIDGuard_ICMENOSESSIONRecovery(t *testing.T) {
 	mock := &mockHTTPClient{responses: []*http.Response{
 		newMockResponse(400, "ICMENOSESSION", nil),                          //nolint:bodyclose // stateless GET → dead context (proxy); mock response, drained and closed by Transport.Request
-		newMockResponse(400, "", map[string]string{"X-CSRF-Token": "tok2"}), //nolint:bodyclose // heal: HEAD stateful + empty; mock response, drained and closed by Transport.Request
+		newMockResponse(200, "", map[string]string{"X-CSRF-Token": "tok2"}), //nolint:bodyclose // heal: HEAD stateful + empty; mock response, drained and closed by Transport.Request
 		newMockResponse(200, "OK", nil),                                     //nolint:bodyclose // retry; mock response, drained and closed by Transport.Request
 	}}
 	cfg := NewConfig("https://sap.example.com", "u", "p", WithProxyContextIDGuard())

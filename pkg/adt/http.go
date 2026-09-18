@@ -328,12 +328,13 @@ func (t *Transport) request(ctx context.Context, path string, opts *RequestOptio
 
 	// Handle CSRF token refresh on 403
 	if resp.StatusCode == http.StatusForbidden && isModifyingMethod(opts.Method) {
-		// Try to refresh CSRF token and retry once. The refresh has to stay on
-		// the request's own session kind: for a stateful write it lands between
-		// the failed attempt and the retry, and an unmarked probe there retires
-		// the session the lock handle belongs to (issue #91). Request-bound for
-		// the same reason.
-		if err := t.fetchCSRFTokenWithReauth(ctx, !t.config.ReauthReadOnly, opts.Stateful, true); err != nil {
+		// A nonempty token from HEAD can still be unusable for the following
+		// write on older ADT stacks: Eclipse obtains its token with GET, which
+		// establishes the context that HEAD alone did not. We already limit this
+		// branch to one retry, so force GET only after the failed write rather
+		// than charging every normal mutation an extra round trip. The probe must
+		// remain on the request's own session kind while a lock is held.
+		if err := t.fetchCSRFTokenWithReauthFrom(ctx, !t.config.ReauthReadOnly, opts.Stateful, true, true); err != nil {
 			return nil, fmt.Errorf("refreshing CSRF token: %w", err)
 		}
 
@@ -474,6 +475,11 @@ func (t *Transport) retryRequest(ctx context.Context, path string, opts *Request
 	}, nil
 }
 
+const (
+	csrfCoreDiscoveryPath      = "/sap/bc/adt/core/discovery"
+	csrfCompatibilityGraphPath = "/sap/bc/adt/compatibility/graph"
+)
+
 // fetchCSRFToken retrieves a CSRF token from the server.
 //
 // HEAD on /core/discovery is the fast path (milliseconds, against tens of seconds
@@ -510,64 +516,93 @@ func (t *Transport) fetchCSRFTokenFor(ctx context.Context, stateful bool) error 
 // allowReauth exists to break a cycle: re-authenticating ends with a token
 // fetch of its own, and that fetch must not start another re-authentication.
 func (t *Transport) fetchCSRFTokenWithReauth(ctx context.Context, allowReauth bool, stateful bool, requestBound bool) error {
-	token, status, redirected, err := t.probeCSRFToken(ctx, http.MethodHead, stateful, requestBound)
-	if err != nil {
-		return err
-	}
-	if !isCSRFToken(token) {
-		if status == http.StatusUnauthorized && !t.canReauth() {
-			return fmt.Errorf("authentication failed (401): check username/password")
-		}
-		var getStatus int
-		var getRedirected bool
-		token, getStatus, getRedirected, err = t.probeCSRFToken(ctx, http.MethodGet, stateful, requestBound)
+	return t.fetchCSRFTokenWithReauthFrom(ctx, allowReauth, stateful, requestBound, false)
+}
+
+// fetchCSRFTokenWithReauthFrom obtains a CSRF token. forceGET is reserved for
+// the one retry after a token-protected write was rejected. On that path use
+// compatibility/graph, the GET handshake proven by the independent ADT client
+// against the affected DEV system; ordinary systems keep core/discovery.
+func (t *Transport) fetchCSRFTokenWithReauthFrom(ctx context.Context, allowReauth bool, stateful bool, requestBound bool, forceGET bool) error {
+	var token string
+	var status int
+	var redirected bool
+	var err error
+
+	if !forceGET {
+		token, status, redirected, err = t.probeCSRFToken(ctx, csrfCoreDiscoveryPath, http.MethodHead, stateful, requestBound)
 		if err != nil {
 			return err
 		}
-		if !isCSRFToken(token) {
-			// An expired SSO session rarely announces itself as a 401. ICF sends
-			// the request on to the identity provider, the redirect chain is
-			// followed, and back comes a logon page under a perfectly ordinary
-			// 200 — with no CSRF token in it, because it is not ADT answering.
-			// A live ADT session always yields a token, so its absence here is
-			// the signal, and a hop to a foreign host is the confirmation.
-			if allowReauth && t.canReauth() && getStatus != http.StatusForbidden {
-				reason := fmt.Sprintf("no CSRF token (HEAD %d, GET %d)", status, getStatus)
-				if redirected || getRedirected {
-					reason = "the identity provider answered instead of SAP"
-				}
-				if t.config.Verbose {
-					fmt.Fprintf(os.Stderr, "[AUTH] session looks expired — %s; re-authenticating\n", reason)
-				}
-				if err := t.callReauthFunc(ctx, stateful, requestBound); err != nil {
-					return fmt.Errorf("re-authenticating (%s): %w", reason, err)
-				}
-				// callReauthFunc ends by fetching a token with the new session.
-				if isCSRFToken(t.getCSRFToken()) {
-					return nil
-				}
-				return t.fetchCSRFTokenWithReauth(ctx, false, stateful, requestBound)
-			}
-			switch getStatus {
-			case http.StatusUnauthorized:
-				return fmt.Errorf("authentication failed (401): check username/password")
-			case http.StatusForbidden:
-				return fmt.Errorf("access forbidden (403): check user authorizations")
-			default:
-				return fmt.Errorf("no CSRF token in response (HEAD %d, GET %d)", status, getStatus)
-			}
+		// A few legacy ICM stacks return a token header even when HEAD itself
+		// failed (the affected DEV system answers 400). That token cannot be
+		// used by the subsequent mutation, so the response status is part of
+		// token validity; fall through to GET on every non-2xx HEAD response.
+		if status >= http.StatusOK && status < http.StatusMultipleChoices && isCSRFToken(token) {
+			t.setCSRFToken(token)
+			return nil
 		}
+		if status == http.StatusUnauthorized && !t.canReauth() {
+			return fmt.Errorf("authentication failed (401): check username/password")
+		}
+		// A failed stateless HEAD can still issue a session cookie. Do not let
+		// that failed handshake seed the GET fallback: basic-auth callers can
+		// safely start a fresh HTTP session, while stateful lock windows and
+		// caller-provided SSO/cookie sessions must remain intact.
+		t.resetCSRFSessionIfSafe(stateful)
+	} else {
+		// The only retry after a rejected mutation follows the same rule: use a
+		// fresh basic-auth session for compatibility/graph rather than reusing
+		// the session that SAP just rejected with its token.
+		t.resetCSRFSessionIfSafe(stateful)
 	}
 
-	t.setCSRFToken(token)
-	return nil
+	var getStatus int
+	var getRedirected bool
+	getPath := csrfCoreDiscoveryPath
+	if forceGET {
+		getPath = csrfCompatibilityGraphPath
+	}
+	token, getStatus, getRedirected, err = t.probeCSRFToken(ctx, getPath, http.MethodGet, stateful, requestBound)
+	if err != nil {
+		return err
+	}
+	if isCSRFToken(token) {
+		t.setCSRFToken(token)
+		return nil
+	}
+
+	if allowReauth && t.canReauth() && getStatus != http.StatusForbidden {
+		reason := fmt.Sprintf("no CSRF token (HEAD %d, GET %d)", status, getStatus)
+		if redirected || getRedirected {
+			reason = "the identity provider answered instead of SAP"
+		}
+		if t.config.Verbose {
+			fmt.Fprintf(os.Stderr, "[AUTH] session looks expired — %s; re-authenticating\n", reason)
+		}
+		if err := t.callReauthFunc(ctx, stateful, requestBound); err != nil {
+			return fmt.Errorf("re-authenticating (%s): %w", reason, err)
+		}
+		if isCSRFToken(t.getCSRFToken()) {
+			return nil
+		}
+		return t.fetchCSRFTokenWithReauth(ctx, false, stateful, requestBound)
+	}
+	switch getStatus {
+	case http.StatusUnauthorized:
+		return fmt.Errorf("authentication failed (401): check username/password")
+	case http.StatusForbidden:
+		return fmt.Errorf("access forbidden (403): check user authorizations")
+	default:
+		return fmt.Errorf("no CSRF token in response (HEAD %d, GET %d)", status, getStatus)
+	}
 }
 
-// probeCSRFToken asks /core/discovery for a token with the given method and
+// probeCSRFToken asks one ADT resource for a token with the given method and
 // returns the token (empty when the server did not supply one), the status, and
 // whether the answer came from somewhere other than the SAP host.
-func (t *Transport) probeCSRFToken(ctx context.Context, method string, stateful bool, requestBound bool) (token string, status int, redirected bool, err error) {
-	reqURL, err := t.buildURL("/sap/bc/adt/core/discovery", nil)
+func (t *Transport) probeCSRFToken(ctx context.Context, path string, method string, stateful bool, requestBound bool) (token string, status int, redirected bool, err error) {
+	reqURL, err := t.buildURL(path, nil)
 	if err != nil {
 		return "", 0, false, fmt.Errorf("building URL: %w", err)
 	}
@@ -1020,10 +1055,23 @@ func (t *Transport) adoptServerCookies(resp *http.Response) {
 		return
 	}
 
+	explicitHTTPBasicSession := resp.Request != nil && resp.Request.URL != nil &&
+		strings.EqualFold(resp.Request.URL.Scheme, "http") && t.config.HasBasicAuth()
+
 	t.cookiesMu.Lock()
 	defer t.cookiesMu.Unlock()
 	for _, c := range fresh {
 		if c.Value == "" {
+			continue
+		}
+		if explicitHTTPBasicSession && isSAPSessionCookie(c.Name) {
+			if t.config.Cookies == nil {
+				t.config.Cookies = map[string]string{}
+			}
+			// Net/http correctly refuses a Secure cookie on HTTP, but several
+			// legacy ICM endpoints issue SAP_SESSIONID that way. The reference
+			// client succeeds by preserving this exact pair itself.
+			t.config.Cookies[c.Name] = c.Value
 			continue
 		}
 		if held, ok := t.config.Cookies[c.Name]; ok && held != c.Value {
@@ -1035,6 +1083,11 @@ func (t *Transport) adoptServerCookies(resp *http.Response) {
 	}
 }
 
+func isSAPSessionCookie(name string) bool {
+	return strings.HasPrefix(strings.ToUpper(name), "SAP_SESSIONID") ||
+		strings.EqualFold(name, "sap-usercontext")
+}
+
 // resetCookieJar discards cookies accumulated under a previous session.
 func (t *Transport) resetCookieJar() {
 	client, ok := t.httpClient.(*http.Client)
@@ -1043,6 +1096,20 @@ func (t *Transport) resetCookieJar() {
 	}
 	if jar, err := cookiejar.New(nil); err == nil {
 		client.Jar = jar
+	}
+}
+
+func (t *Transport) resetCSRFSessionIfSafe(stateful bool) {
+	if stateful || t.config.SessionType == SessionStateful || !t.config.HasBasicAuth() {
+		return
+	}
+	t.resetCookieJar()
+	t.cookiesMu.Lock()
+	defer t.cookiesMu.Unlock()
+	for name := range t.config.Cookies {
+		if isSAPSessionCookie(name) {
+			delete(t.config.Cookies, name)
+		}
 	}
 }
 

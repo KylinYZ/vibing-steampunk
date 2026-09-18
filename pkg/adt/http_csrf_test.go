@@ -76,6 +76,79 @@ func TestFetchCSRFTokenGetFallback(t *testing.T) {
 	}
 }
 
+func TestTransportRequestCSRF403ForcesGETRefresh(t *testing.T) {
+	var discoveryPaths []string
+	var writes atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case csrfCoreDiscoveryPath, csrfCompatibilityGraphPath:
+			discoveryPaths = append(discoveryPaths, r.URL.Path)
+			if r.Method == http.MethodHead {
+				w.Header().Set("X-CSRF-Token", "HEAD-TOKEN")
+			} else {
+				w.Header().Set("X-CSRF-Token", "GET-TOKEN")
+			}
+			w.WriteHeader(http.StatusOK)
+		case "/sap/bc/adt/write":
+			if writes.Add(1) == 1 {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			if got := r.Header.Get("X-CSRF-Token"); got != "GET-TOKEN" {
+				t.Errorf("POST token = %q, want GET-TOKEN", got)
+			}
+			w.WriteHeader(http.StatusOK)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	tr := newCSRFTestTransport(t, srv)
+	if _, err := tr.Request(context.Background(), "/sap/bc/adt/write", &RequestOptions{Method: http.MethodPost}); err != nil {
+		t.Fatalf("POST after forced GET refresh: %v", err)
+	}
+	want := strings.Join([]string{csrfCoreDiscoveryPath, csrfCompatibilityGraphPath}, ",")
+	if got := strings.Join(discoveryPaths, ","); got != want {
+		t.Fatalf("CSRF paths = %q, want %q", got, want)
+	}
+}
+
+func TestTransportRequestCSRFGetFallbackDiscardsFailedHeadSession(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == csrfCoreDiscoveryPath && r.Method == http.MethodHead:
+			http.SetCookie(w, &http.Cookie{Name: "SAP_SESSIONID", Value: "from-head", Path: "/"})
+			w.Header().Set("X-CSRF-Token", "INVALID-HEAD-TOKEN")
+			w.WriteHeader(http.StatusBadRequest)
+		case r.URL.Path == csrfCoreDiscoveryPath && r.Method == http.MethodGet:
+			if cookie, err := r.Cookie("SAP_SESSIONID"); err == nil {
+				t.Errorf("GET inherited failed HEAD session cookie %q", cookie.Value)
+			}
+			http.SetCookie(w, &http.Cookie{Name: "SAP_SESSIONID", Value: "from-get", Path: "/"})
+			w.Header().Set("X-CSRF-Token", "GET-TOKEN")
+			w.WriteHeader(http.StatusOK)
+		case r.URL.Path == "/sap/bc/adt/write":
+			cookie, err := r.Cookie("SAP_SESSIONID")
+			if err != nil || cookie.Value != "from-get" {
+				t.Errorf("POST session cookie = %v, want from-get", cookie)
+			}
+			if got := r.Header.Get("X-CSRF-Token"); got != "GET-TOKEN" {
+				t.Errorf("POST token = %q, want GET-TOKEN", got)
+			}
+			w.WriteHeader(http.StatusOK)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	tr := newCSRFTestTransport(t, srv)
+	if _, err := tr.Request(context.Background(), "/sap/bc/adt/write", &RequestOptions{Method: http.MethodPost}); err != nil {
+		t.Fatalf("POST after fresh GET fallback: %v", err)
+	}
+}
+
 // A 401 must be reported as an authentication failure without a pointless retry.
 func TestFetchCSRFTokenUnauthorizedDoesNotRetry(t *testing.T) {
 	var requests atomic.Int32
