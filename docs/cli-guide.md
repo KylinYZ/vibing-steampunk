@@ -6,6 +6,8 @@
 
 Calls RFC-enabled function modules over the SAP gateway using the SDK-free
 [open-rfc-go](https://github.com/KylinYZ/open-rfc-go) client — no NW RFC SDK, no cgo.
+This is the KylinYZ secondary-development line; it pins the KylinYZ fork of `open-rfc-go`,
+which normalizes ISO language codes to SAP internal keys, including numeric keys such as `ZH -> 1`.
 
 | Command | Purpose |
 |---|---|

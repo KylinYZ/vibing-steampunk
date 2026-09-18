@@ -4,6 +4,14 @@
 The available surface varies by release, and `vsp compat` reports it per system: RAP needs
 S/4, AMDP needs HANA, and some ADT resources present on S/4 are absent on ERP.
 
+> **Fork status — Kylin secondary development.**
+> This is KylinYZ's secondary-development fork of [`oisee/vibing-steampunk`](https://github.com/oisee/vibing-steampunk).
+> The maintained branch is `kylin-dev`, and the current personal release is `v2.59.0-kylin.1`.
+> VSP now depends on the KylinYZ fork of [`open-rfc-go`](https://github.com/KylinYZ/open-rfc-go) instead of the upstream module:
+> - the local `replace` has been removed, so the dependency resolves from the remote fork commit;
+> - `pkg/saprfc` passes the configured RFC logon language through unchanged instead of truncating it to one character;
+> - the RFC base keeps ISO↔SAP language-key normalization and numeric SAP keys such as `ZH -> 1`.
+
 > **ADT ↔ MCP Bridge**: Gives Claude (and other AI assistants) full access to SAP ADT APIs.
 > Read code, write code, debug, deploy, run tests — all through natural language (or DSL for automation).
 >
