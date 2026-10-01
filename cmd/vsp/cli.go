@@ -191,6 +191,7 @@ func resolveSystemParams(cmd *cobra.Command) (*systemParams, error) {
 		AllowedTransports:       splitList(os.Getenv("SAP_ALLOWED_TRANSPORTS")),
 		AllowTransportableEdits: allowTransportableEdits,
 		TransportChoice:         os.Getenv("SAP_TRANSPORT_CHOICE"),
+		BlockFreeSQL:            envFlag("SAP_BLOCK_FREE_SQL"),
 		Cache:                   cacheEnabled,
 		CachePath:               cachePath,
 	}, nil

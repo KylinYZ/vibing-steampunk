@@ -217,10 +217,10 @@ func jsonStringSlice(values []string) string {
 	return "[" + strings.Join(quoted, ",") + "]"
 }
 
-// runEnvOnlySourceWrite runs `vsp source write` through the root command with
+// runEnvOnlyCLI runs a vsp command line through the root command with
 // no systems config anywhere, so resolveSystemParams takes the SAP_* branch.
 // It returns the number of requests the fake ADT server saw, and the error.
-func runEnvOnlySourceWrite(t *testing.T, env map[string]string, args ...string) (int, error) {
+func runEnvOnlyCLI(t *testing.T, env map[string]string, args ...string) (int, error) {
 	t.Helper()
 	var mu sync.Mutex
 	requests := 0
@@ -293,7 +293,7 @@ func TestEnvOnlyTransportableEditHonoursAllowedTransports(t *testing.T) {
 		"SAP_ALLOWED_TRANSPORTS":        "TR-EXAMPLE",
 	}
 
-	requests, err := runEnvOnlySourceWrite(t, env, "source", "write", "PROG", "ZDEMO_OUT", "--transport", "TR-OTHER")
+	requests, err := runEnvOnlyCLI(t, env, "source", "write", "PROG", "ZDEMO_OUT", "--transport", "TR-OTHER")
 	if err == nil || !strings.Contains(err.Error(), "allowed transports") {
 		t.Fatalf("a transport outside SAP_ALLOWED_TRANSPORTS must be refused, got %v", err)
 	}
@@ -301,7 +301,7 @@ func TestEnvOnlyTransportableEditHonoursAllowedTransports(t *testing.T) {
 		t.Fatalf("the refused write reached the server (%d requests)", requests)
 	}
 
-	requests, err = runEnvOnlySourceWrite(t, env, "source", "write", "PROG", "ZDEMO_IN", "--transport", "TR-EXAMPLE")
+	requests, err = runEnvOnlyCLI(t, env, "source", "write", "PROG", "ZDEMO_IN", "--transport", "TR-EXAMPLE")
 	if err == nil {
 		t.Fatal("source write unexpectedly succeeded against fake ADT")
 	}
@@ -313,7 +313,7 @@ func TestEnvOnlyTransportableEditHonoursAllowedTransports(t *testing.T) {
 	env["SAP_TRANSPORT_READ_ONLY"] = "true"
 	env["SAP_TRANSPORT_CHOICE"] = "off"
 	lastClient = nil
-	if _, err := runEnvOnlySourceWrite(t, env, "source", "write", "PROG", "ZDEMO_IN", "--transport", "TR-EXAMPLE"); err == nil {
+	if _, err := runEnvOnlyCLI(t, env, "source", "write", "PROG", "ZDEMO_IN", "--transport", "TR-EXAMPLE"); err == nil {
 		t.Fatal("source write unexpectedly succeeded against fake ADT")
 	}
 	if lastClient == nil || lastClient.Safety() == nil {
@@ -321,5 +321,17 @@ func TestEnvOnlyTransportableEditHonoursAllowedTransports(t *testing.T) {
 	}
 	if s := lastClient.Safety(); !s.EnableTransports || !s.TransportReadOnly || s.TransportChoice != "off" {
 		t.Fatalf("SAP_ENABLE_TRANSPORTS, SAP_TRANSPORT_READ_ONLY and SAP_TRANSPORT_CHOICE must reach the client, got %+v", s)
+	}
+}
+
+// SAP_BLOCK_FREE_SQL is read for a named system; an env-only config must
+// honour it too, or `vsp query` runs arbitrary SQL the variable forbids.
+func TestEnvOnlyConfigHonoursBlockFreeSQL(t *testing.T) {
+	requests, err := runEnvOnlyCLI(t, map[string]string{"SAP_BLOCK_FREE_SQL": "true"}, "query", "T000")
+	if err == nil {
+		t.Fatal("free SQL ran although SAP_BLOCK_FREE_SQL=true")
+	}
+	if requests != 0 {
+		t.Fatalf("SAP_BLOCK_FREE_SQL=true did not stop the query before network I/O (%d requests): %v", requests, err)
 	}
 }
