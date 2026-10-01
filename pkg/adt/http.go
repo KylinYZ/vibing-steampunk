@@ -135,6 +135,11 @@ type Transport struct {
 	// from triggering simultaneous SAML dances.
 	reauthMu   sync.Mutex
 	lastReauth time.Time
+
+	// lockOutstanding, when set by the owning Client, reports whether that
+	// client holds a lock handle. Cookie-file recovery is refused while it
+	// does: reloading would replace the session the lock belongs to.
+	lockOutstanding func() bool
 }
 
 // NewTransport creates a new Transport with the given configuration.
@@ -641,13 +646,19 @@ func (t *Transport) canReauth() bool {
 // stateful session makes every request stateful (see the session header in
 // setDefaultHeaders), not only those that ask for it.
 func (t *Transport) requireSafeReauth(opts *RequestOptions, path string) error {
-	stateful := t.config.SessionType == SessionStateful || (opts != nil && opts.Stateful)
-	if !t.config.ReauthReadOnly || (opts != nil && !stateful && (opts.Method == http.MethodGet || opts.Method == http.MethodHead)) {
+	if !t.config.ReauthReadOnly {
 		return nil
 	}
 	method := http.MethodGet
 	if opts != nil && opts.Method != "" {
 		method = opts.Method
+	}
+	if t.lockOutstanding != nil && t.lockOutstanding() {
+		return fmt.Errorf("session expired on %s %s: refusing cookie-file recovery while a lock is open, because reloading would replace the session the lock belongs to", method, path)
+	}
+	stateful := t.config.SessionType == SessionStateful || (opts != nil && opts.Stateful)
+	if opts != nil && !stateful && (opts.Method == http.MethodGet || opts.Method == http.MethodHead) {
+		return nil
 	}
 	return fmt.Errorf("session expired on %s %s: refusing cookie-file recovery and replay because the remote result is unknown", method, path)
 }

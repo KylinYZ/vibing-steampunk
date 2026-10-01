@@ -310,6 +310,62 @@ func TestCookieFileReauth_RefusesUnderClientWideStatefulSession(t *testing.T) {
 	}
 }
 
+// A plain stateless GET can fail while another call holds a lock. Reloading
+// the cookie file then would swap the session that lock belongs to, so the
+// client's open lock window must stop the recovery too.
+func TestCookieFileReauth_RefusesWhileLockWindowOpen(t *testing.T) {
+	dir := t.TempDir()
+	cookieFile := filepath.Join(dir, "cookies.txt")
+	writeTestCookieFile(t, cookieFile, "B")
+
+	var sawRefreshedCookie atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/sap/bc/adt/core/discovery":
+			w.Header().Set("X-CSRF-Token", "csrf-B")
+			w.WriteHeader(http.StatusOK)
+		case "/read":
+			if sessionCookie(r) == "B" {
+				sawRefreshedCookie.Store(true)
+				_, _ = w.Write([]byte("recovered"))
+				return
+			}
+			http.Error(w, "expired", http.StatusUnauthorized)
+		}
+	}))
+	defer server.Close()
+
+	cookies, err := LoadCookiesFromFile(cookieFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reauth, err := NewCookieFileReauthFunc(cookieFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := NewClient(server.URL, "", "", WithCookies(cookies), WithReauthFunc(reauth), WithReadOnlyReauth())
+	client.SetCookies(map[string]string{"SAP_SESSION": "A"})
+
+	client.noteLockOpened("LOCK-HANDLE")
+	_, err = client.transport.Request(context.Background(), "/read", &RequestOptions{Method: http.MethodGet})
+	if err == nil || !strings.Contains(err.Error(), "lock is open") {
+		t.Fatalf("read error = %v, want refusal while a lock is open", err)
+	}
+	if sawRefreshedCookie.Load() {
+		t.Error("cookie-file refresh must not run while a lock is open")
+	}
+	if got := client.CurrentCookies(); got["SAP_SESSION"] != "A" {
+		t.Errorf("cookies = %v, want the locked session's A kept", got)
+	}
+
+	// Once the lock is released, the same read recovers as before.
+	client.noteLockClosed("LOCK-HANDLE")
+	resp, err := client.transport.Request(context.Background(), "/read", &RequestOptions{Method: http.MethodGet})
+	if err != nil || string(resp.Body) != "recovered" {
+		t.Fatalf("read after unlock = %q, %v; want recovered", resp.Body, err)
+	}
+}
+
 func TestReadOnlyReauthDoesNotChangeOtherCredentialSourceReplayPolicy(t *testing.T) {
 	var writes atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
