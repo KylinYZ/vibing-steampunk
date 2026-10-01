@@ -174,18 +174,18 @@ func resolveSystemParams(cmd *cobra.Command) (*systemParams, error) {
 	}
 
 	return &systemParams{
-		URL:                url,
-		User:               user,
-		Password:           password,
-		Client:             getEnvOrDefault("SAP_CLIENT", "001"),
-		Language:           getEnvOrDefault("SAP_LANGUAGE", "EN"),
-		Insecure:           os.Getenv("SAP_INSECURE") == "true",
-		TransportAttribute: resolveTransportAttributeFromEnv(),
-		ReadOnly:           strings.EqualFold(os.Getenv("SAP_READ_ONLY"), "true"),
-		AllowedPackages:    splitList(os.Getenv("SAP_ALLOWED_PACKAGES")),
+		URL:                     url,
+		User:                    user,
+		Password:                password,
+		Client:                  getEnvOrDefault("SAP_CLIENT", "001"),
+		Language:                getEnvOrDefault("SAP_LANGUAGE", "EN"),
+		Insecure:                os.Getenv("SAP_INSECURE") == "true",
+		TransportAttribute:      resolveTransportAttributeFromEnv(),
+		ReadOnly:                strings.EqualFold(os.Getenv("SAP_READ_ONLY"), "true"),
+		AllowedPackages:         splitList(os.Getenv("SAP_ALLOWED_PACKAGES")),
 		AllowTransportableEdits: allowTransportableEdits,
-		Cache:              cacheEnabled,
-		CachePath:          cachePath,
+		Cache:                   cacheEnabled,
+		CachePath:               cachePath,
 	}, nil
 }
 
