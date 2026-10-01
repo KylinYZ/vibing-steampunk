@@ -8,6 +8,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 // A system declared read_only was writable from every CLI subcommand, because
@@ -69,10 +72,30 @@ func TestSplitListIgnoresBlanks(t *testing.T) {
 func TestCLITransportableEditsReachSourceWriteWithSafePrecedence(t *testing.T) {
 	var mu sync.Mutex
 	var requests []string
+	// existingPackage, when set, makes the fake ADT report ZDEMO_PACKAGE as an
+	// existing program in that package, so the update path's package gate
+	// (which resolves the object's real package, #230) has something to judge.
+	existingPackage := ""
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
-		requests = append(requests, r.Method)
+		requests = append(requests, r.Method+" "+r.URL.Path+"?"+r.URL.RawQuery)
+		pkg := existingPackage
 		mu.Unlock()
+		if pkg != "" && r.Method == http.MethodGet {
+			w.Header().Set("X-CSRF-Token", "test-token")
+			switch {
+			case strings.Contains(r.URL.Path, "informationsystem/search"):
+				_, _ = fmt.Fprintf(w, `<?xml version="1.0" encoding="UTF-8"?>
+<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">
+  <adtcore:objectReference adtcore:uri="/sap/bc/adt/programs/programs/zdemo_package" adtcore:type="PROG/P" adtcore:name="ZDEMO_PACKAGE" adtcore:packageName=%q/>
+</adtcore:objectReferences>`, pkg)
+				return
+			case strings.HasSuffix(r.URL.Path, "/programs/programs/ZDEMO_PACKAGE/source/main"):
+				w.Header().Set("Content-Type", "text/plain")
+				_, _ = fmt.Fprint(w, "REPORT zdemo_package.")
+				return
+			}
+		}
 		http.Error(w, "fake ADT rejects writes", http.StatusServiceUnavailable)
 	}))
 	t.Cleanup(srv.Close)
@@ -86,7 +109,10 @@ func TestCLITransportableEditsReachSourceWriteWithSafePrecedence(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
-	t.Setenv("SAP_ALLOW_TRANSPORTABLE_EDITS", "")
+	t.Setenv("HOME", tempDir) // no ~/.vsp.json either
+	for _, name := range envOnlyCLIVars {
+		t.Setenv(name, "")
+	}
 
 	writeNamedConfig := func(readOnly bool, allowedPackages []string) {
 		t.Helper()
@@ -99,14 +125,13 @@ func TestCLITransportableEditsReachSourceWriteWithSafePrecedence(t *testing.T) {
 	resetRequests := func() { mu.Lock(); requests = nil; mu.Unlock() }
 	requestCount := func() int { mu.Lock(); defer mu.Unlock(); return len(requests) }
 
+	restoreCommandFlags(t)
 	flag := rootCmd.PersistentFlags().Lookup("allow-transportable-edits")
 	if flag == nil {
 		t.Fatal("root persistent transportable-edits flag is missing")
 	}
-	oldFlagValue, oldFlagChanged, oldCfgValue, oldSystemName := flag.Value.String(), flag.Changed, cfg.AllowTransportableEdits, systemName
+	oldCfgValue, oldSystemName := cfg.AllowTransportableEdits, systemName
 	t.Cleanup(func() {
-		_ = flag.Value.Set(oldFlagValue)
-		flag.Changed = oldFlagChanged
 		cfg.AllowTransportableEdits = oldCfgValue
 		systemName = oldSystemName
 		rootCmd.SetArgs(nil)
@@ -175,12 +200,26 @@ func TestCLITransportableEditsReachSourceWriteWithSafePrecedence(t *testing.T) {
 		t.Fatal("transportable-edits opt-in bypassed read-only before network I/O")
 	}
 
+	// Since #230 the package gate for an existing object judges the object's
+	// real package, which takes a read (existence probe, package lookup)
+	// before it can decide. So reads are expected here; what must not happen
+	// is a lock or a write for an object outside the allowed packages.
 	writeNamedConfig(false, []string{"$TMP"})
-	if err := runSourceWrite("source", "write", "PROG", "ZDEMO_PACKAGE", "--transport", "TR-EXAMPLE"); err == nil {
-		t.Fatal("package-restricted source write unexpectedly succeeded")
+	mu.Lock()
+	existingPackage = "ZPROD"
+	mu.Unlock()
+	err = runSourceWrite("source", "write", "PROG", "ZDEMO_PACKAGE", "--transport", "TR-EXAMPLE")
+	mu.Lock()
+	existingPackage = ""
+	seen := append([]string(nil), requests...)
+	mu.Unlock()
+	if err == nil || !strings.Contains(err.Error(), "ZPROD") {
+		t.Fatalf("an object in a package outside allowed_packages must be refused by its real package, got %v (requests %v)", err, seen)
 	}
-	if requestCount() != 0 {
-		t.Fatal("transportable-edits opt-in bypassed the package gate before network I/O")
+	for _, req := range seen {
+		if !strings.HasPrefix(req, http.MethodGet+" ") || strings.Contains(req, "_action=LOCK") {
+			t.Fatalf("transportable-edits opt-in let a lock or write past the package gate: %v", seen)
+		}
 	}
 
 	if err := os.Remove(".vsp.json"); err != nil {
@@ -217,6 +256,64 @@ func jsonStringSlice(values []string) string {
 	return "[" + strings.Join(quoted, ",") + "]"
 }
 
+// envOnlyCLIVars are the variables the env-only branch of resolveSystemParams
+// (and getClient) reads, cleared by runEnvOnlyCLI before it applies its own.
+var envOnlyCLIVars = []string{
+	"SAP_URL", "SAP_USER", "SAP_PASSWORD", "SAP_CLIENT", "SAP_LANGUAGE", "SAP_INSECURE",
+	"SAP_COOKIE_FILE", "SAP_COOKIE_STRING", "SAP_SSO", "SAP_SSO_SYSTEM",
+	"SAP_READ_ONLY", "SAP_ALLOWED_PACKAGES", "SAP_BLOCK_FREE_SQL",
+	"SAP_ALLOW_TRANSPORTABLE_EDITS", "SAP_ALLOWED_TRANSPORTS", "SAP_ENABLE_TRANSPORTS",
+	"SAP_TRANSPORT_READ_ONLY", "SAP_TRANSPORT_CHOICE", "VSP_TRANSPORT_ATTRIBUTE",
+	"VSP_CACHE", "VSP_CACHE_PATH", "VSP_CACHE_TTL",
+}
+
+// restoreCommandFlags snapshots every flag on the global command tree and
+// restores it when the test ends. Executing rootCmd parses into those globals,
+// so without this a `--transport TR-EXAMPLE` from one test is still set on
+// sourceWriteCmd when a later test calls runSourceWrite directly.
+func restoreCommandFlags(t *testing.T) {
+	t.Helper()
+	type saved struct {
+		flag    *pflag.Flag
+		value   string
+		slice   []string
+		isSlice bool
+		changed bool
+	}
+	var all []saved
+	seen := map[*pflag.Flag]bool{}
+	var walk func(*cobra.Command)
+	walk = func(cmd *cobra.Command) {
+		for _, set := range []*pflag.FlagSet{cmd.PersistentFlags(), cmd.Flags()} {
+			set.VisitAll(func(f *pflag.Flag) {
+				if seen[f] {
+					return
+				}
+				seen[f] = true
+				s := saved{flag: f, value: f.Value.String(), changed: f.Changed}
+				if sv, ok := f.Value.(pflag.SliceValue); ok {
+					s.isSlice, s.slice = true, append([]string(nil), sv.GetSlice()...)
+				}
+				all = append(all, s)
+			})
+		}
+		for _, sub := range cmd.Commands() {
+			walk(sub)
+		}
+	}
+	walk(rootCmd)
+	t.Cleanup(func() {
+		for _, s := range all {
+			if s.isSlice {
+				_ = s.flag.Value.(pflag.SliceValue).Replace(s.slice)
+			} else {
+				_ = s.flag.Value.Set(s.value)
+			}
+			s.flag.Changed = s.changed
+		}
+	})
+}
+
 // runEnvOnlyCLI runs a vsp command line through the root command with
 // no systems config anywhere, so resolveSystemParams takes the SAP_* branch.
 // It returns the number of requests the fake ADT server saw, and the error.
@@ -242,6 +339,13 @@ func runEnvOnlyCLI(t *testing.T, env map[string]string, args ...string) (int, er
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 	t.Setenv("HOME", tempDir) // no ~/.vsp.json either
+	// Start from a clean SAP_*/VSP_* slate, so a developer's shell (a read-only
+	// or package-restricted system, a cache, cookies) cannot change the result.
+	for _, name := range envOnlyCLIVars {
+		t.Setenv(name, "")
+	}
+	oldLastClient := lastClient
+	t.Cleanup(func() { lastClient = oldLastClient })
 	t.Setenv("SAP_URL", srv.URL)
 	t.Setenv("SAP_USER", "TESTUSER")
 	t.Setenv("SAP_PASSWORD", "secret")
@@ -249,14 +353,13 @@ func runEnvOnlyCLI(t *testing.T, env map[string]string, args ...string) (int, er
 		t.Setenv(k, v)
 	}
 
+	restoreCommandFlags(t)
 	flag := rootCmd.PersistentFlags().Lookup("allow-transportable-edits")
 	if flag == nil {
 		t.Fatal("root persistent transportable-edits flag is missing")
 	}
-	oldFlagValue, oldFlagChanged, oldCfgValue, oldSystemName := flag.Value.String(), flag.Changed, cfg.AllowTransportableEdits, systemName
+	oldCfgValue, oldSystemName := cfg.AllowTransportableEdits, systemName
 	t.Cleanup(func() {
-		_ = flag.Value.Set(oldFlagValue)
-		flag.Changed = oldFlagChanged
 		cfg.AllowTransportableEdits = oldCfgValue
 		systemName = oldSystemName
 		rootCmd.SetArgs(nil)
@@ -328,8 +431,8 @@ func TestEnvOnlyTransportableEditHonoursAllowedTransports(t *testing.T) {
 // honour it too, or `vsp query` runs arbitrary SQL the variable forbids.
 func TestEnvOnlyConfigHonoursBlockFreeSQL(t *testing.T) {
 	requests, err := runEnvOnlyCLI(t, map[string]string{"SAP_BLOCK_FREE_SQL": "true"}, "query", "T000")
-	if err == nil {
-		t.Fatal("free SQL ran although SAP_BLOCK_FREE_SQL=true")
+	if err == nil || !strings.Contains(err.Error(), "blocked by safety") {
+		t.Fatalf("free SQL must be refused by the safety configuration when SAP_BLOCK_FREE_SQL=true, got %v", err)
 	}
 	if requests != 0 {
 		t.Fatalf("SAP_BLOCK_FREE_SQL=true did not stop the query before network I/O (%d requests): %v", requests, err)
