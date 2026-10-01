@@ -164,9 +164,9 @@ func NewServer(cfg *Config) *Server {
 	}
 	if cfg.ReauthFunc != nil {
 		opts = append(opts, adt.WithReauthFunc(cfg.ReauthFunc))
-	if cfg.ReauthReadOnly {
-		opts = append(opts, adt.WithReadOnlyReauth())
-	}
+		if cfg.ReauthReadOnly {
+			opts = append(opts, adt.WithReadOnlyReauth())
+		}
 	}
 	if cfg.ReauthTimeout > 0 {
 		opts = append(opts, adt.WithReauthTimeout(cfg.ReauthTimeout))
