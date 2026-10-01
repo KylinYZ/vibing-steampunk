@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -402,3 +403,41 @@ func TestReadOnlyReauthDoesNotChangeOtherCredentialSourceReplayPolicy(t *testing
 }
 
 func ptr(s string) *string { return &s }
+
+// Session recovery empties the client's jar while other requests use it: the
+// jar stays the same object, and reset and concurrent use do not race.
+func TestResettableJar_ResetWhileInUse(t *testing.T) {
+	client := NewConfig("https://sap.example.com", "u", "p").NewHTTPClient()
+	jar, ok := client.Jar.(*resettableJar)
+	if !ok {
+		t.Fatalf("NewHTTPClient jar is %T, want *resettableJar", client.Jar)
+	}
+	tr := NewTransportWithClient(NewConfig("https://sap.example.com", "u", "p"), client)
+	u, _ := url.Parse("https://sap.example.com/sap/bc/adt/x")
+
+	jar.SetCookies(u, []*http.Cookie{{Name: "sap-contextid", Value: "old", Path: "/"}})
+	tr.resetCookieJar()
+	if client.Jar != http.CookieJar(jar) {
+		t.Fatal("resetCookieJar replaced client.Jar; it must empty the jar in place")
+	}
+	if got := jar.Cookies(u); len(got) != 0 {
+		t.Fatalf("cookies survived the reset: %v", got)
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			for n := 0; n < 200; n++ {
+				if i%2 == 0 {
+					tr.resetCookieJar()
+					continue
+				}
+				client.Jar.SetCookies(u, []*http.Cookie{{Name: "c", Value: fmt.Sprint(n), Path: "/"}})
+				_ = client.Jar.Cookies(u)
+			}
+		}(i)
+	}
+	wg.Wait()
+}

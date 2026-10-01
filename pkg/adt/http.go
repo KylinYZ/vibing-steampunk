@@ -1047,14 +1047,60 @@ func (t *Transport) adoptServerCookies(resp *http.Response) {
 }
 
 // resetCookieJar discards cookies accumulated under a previous session.
+//
+// The client built by Config.NewHTTPClient keeps one resettableJar for its
+// lifetime, and clearing it is safe while other requests are under way.
+// Assigning client.Jar instead would race every concurrent Do, which reads
+// the field; that fallback is left only for a caller-supplied client with a
+// jar of its own.
 func (t *Transport) resetCookieJar() {
 	client, ok := t.httpClient.(*http.Client)
 	if !ok || client.Jar == nil {
 		return
 	}
+	if jar, ok := client.Jar.(*resettableJar); ok {
+		jar.reset()
+		return
+	}
 	if jar, err := cookiejar.New(nil); err == nil {
 		client.Jar = jar
 	}
+}
+
+// resettableJar is an http.CookieJar that can be emptied while in use. The
+// http.Client holds the same resettableJar throughout; reset swaps the jar
+// inside it under a lock.
+type resettableJar struct {
+	mu    sync.RWMutex
+	inner http.CookieJar
+}
+
+func newResettableJar() *resettableJar {
+	jar, _ := cookiejar.New(nil) // cookiejar.New never fails with nil options
+	return &resettableJar{inner: jar}
+}
+
+func (j *resettableJar) SetCookies(u *url.URL, cookies []*http.Cookie) {
+	j.mu.RLock()
+	inner := j.inner
+	j.mu.RUnlock()
+	inner.SetCookies(u, cookies)
+}
+
+func (j *resettableJar) Cookies(u *url.URL) []*http.Cookie {
+	j.mu.RLock()
+	inner := j.inner
+	j.mu.RUnlock()
+	return inner.Cookies(u)
+}
+
+// reset drops every cookie. A request that took the old jar just before
+// reset may still set its response cookies there; they are discarded with it.
+func (j *resettableJar) reset() {
+	jar, _ := cookiejar.New(nil)
+	j.mu.Lock()
+	j.inner = jar
+	j.mu.Unlock()
 }
 
 // CurrentCookies returns a copy of the session this client is using now.

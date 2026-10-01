@@ -6,7 +6,6 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
-	"net/http/cookiejar"
 	"time"
 )
 
@@ -317,7 +316,10 @@ func WithTerminalID(terminalID string) Option {
 
 // NewHTTPClient creates an http.Client configured for the given Config.
 func (c *Config) NewHTTPClient() *http.Client {
-	jar, _ := cookiejar.New(nil)
+	// One jar for the client's lifetime: session recovery empties it in place
+	// (see Transport.resetCookieJar) rather than replacing client.Jar under
+	// concurrent requests.
+	jar := newResettableJar()
 
 	transport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment, // Honor HTTP_PROXY/HTTPS_PROXY env vars
