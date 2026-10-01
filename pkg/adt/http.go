@@ -637,8 +637,12 @@ func (t *Transport) canReauth() bool {
 // requireSafeReauth keeps externally refreshed cookie files out of writes and
 // lock windows. The request already left the process, so continuing it with a
 // new session would turn an observable failure into an unprovable outcome.
+// The session kind is the one the request was sent with: a client-wide
+// stateful session makes every request stateful (see the session header in
+// setDefaultHeaders), not only those that ask for it.
 func (t *Transport) requireSafeReauth(opts *RequestOptions, path string) error {
-	if !t.config.ReauthReadOnly || (opts != nil && !opts.Stateful && (opts.Method == http.MethodGet || opts.Method == http.MethodHead)) {
+	stateful := t.config.SessionType == SessionStateful || (opts != nil && opts.Stateful)
+	if !t.config.ReauthReadOnly || (opts != nil && !stateful && (opts.Method == http.MethodGet || opts.Method == http.MethodHead)) {
 		return nil
 	}
 	method := http.MethodGet

@@ -273,6 +273,43 @@ func TestCookieFileReauth_DoesNotReplayWritesOrLockWindows(t *testing.T) {
 	}
 }
 
+// A client-wide stateful session sends every GET as stateful, so a plain
+// read lives in the same session as any lock. Reloading the cookie file there
+// would replace that session, exactly as for a per-request stateful read.
+func TestCookieFileReauth_RefusesUnderClientWideStatefulSession(t *testing.T) {
+	dir := t.TempDir()
+	cookieFile := filepath.Join(dir, "cookies.txt")
+	writeTestCookieFile(t, cookieFile, "B")
+
+	var sawRefreshedCookie atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if sessionCookie(r) == "B" {
+			sawRefreshedCookie.Store(true)
+		}
+		switch r.URL.Path {
+		case "/sap/bc/adt/core/discovery":
+			w.Header().Set("X-CSRF-Token", "csrf")
+			w.WriteHeader(http.StatusOK)
+		default:
+			http.Error(w, "expired", http.StatusUnauthorized)
+		}
+	}))
+	defer server.Close()
+
+	transport := cookieFileTransport(t, server.URL, cookieFile, WithSessionType(SessionStateful))
+	transport.SetCookies(map[string]string{"SAP_SESSION": "A"})
+	_, err := transport.Request(context.Background(), "/read", &RequestOptions{Method: http.MethodGet})
+	if err == nil || !strings.Contains(err.Error(), "remote result is unknown") {
+		t.Fatalf("read error = %v, want result-unknown refusal", err)
+	}
+	if sawRefreshedCookie.Load() {
+		t.Error("cookie-file refresh must not run inside a client-wide stateful session")
+	}
+	if got := transport.CurrentCookies(); got["SAP_SESSION"] != "A" {
+		t.Errorf("cookies = %v, want the stateful session's A kept", got)
+	}
+}
+
 func TestReadOnlyReauthDoesNotChangeOtherCredentialSourceReplayPolicy(t *testing.T) {
 	var writes atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
