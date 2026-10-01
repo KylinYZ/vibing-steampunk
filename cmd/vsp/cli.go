@@ -174,16 +174,23 @@ func resolveSystemParams(cmd *cobra.Command) (*systemParams, error) {
 	}
 
 	return &systemParams{
-		URL:                     url,
-		User:                    user,
-		Password:                password,
-		Client:                  getEnvOrDefault("SAP_CLIENT", "001"),
-		Language:                getEnvOrDefault("SAP_LANGUAGE", "EN"),
-		Insecure:                os.Getenv("SAP_INSECURE") == "true",
-		TransportAttribute:      resolveTransportAttributeFromEnv(),
-		ReadOnly:                strings.EqualFold(os.Getenv("SAP_READ_ONLY"), "true"),
-		AllowedPackages:         splitList(os.Getenv("SAP_ALLOWED_PACKAGES")),
+		URL:                url,
+		User:               user,
+		Password:           password,
+		Client:             getEnvOrDefault("SAP_CLIENT", "001"),
+		Language:           getEnvOrDefault("SAP_LANGUAGE", "EN"),
+		Insecure:           os.Getenv("SAP_INSECURE") == "true",
+		TransportAttribute: resolveTransportAttributeFromEnv(),
+		ReadOnly:           strings.EqualFold(os.Getenv("SAP_READ_ONLY"), "true"),
+		AllowedPackages:    splitList(os.Getenv("SAP_ALLOWED_PACKAGES")),
+		// The transport settings travel with the opt-in: without the
+		// allowlist, SAP_ALLOW_TRANSPORTABLE_EDITS=true would accept any
+		// transport in this mode.
+		EnableTransports:        envFlag("SAP_ENABLE_TRANSPORTS"),
+		TransportReadOnly:       envFlag("SAP_TRANSPORT_READ_ONLY"),
+		AllowedTransports:       splitList(os.Getenv("SAP_ALLOWED_TRANSPORTS")),
 		AllowTransportableEdits: allowTransportableEdits,
+		TransportChoice:         os.Getenv("SAP_TRANSPORT_CHOICE"),
 		Cache:                   cacheEnabled,
 		CachePath:               cachePath,
 	}, nil

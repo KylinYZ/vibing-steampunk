@@ -216,3 +216,110 @@ func jsonStringSlice(values []string) string {
 	}
 	return "[" + strings.Join(quoted, ",") + "]"
 }
+
+// runEnvOnlySourceWrite runs `vsp source write` through the root command with
+// no systems config anywhere, so resolveSystemParams takes the SAP_* branch.
+// It returns the number of requests the fake ADT server saw, and the error.
+func runEnvOnlySourceWrite(t *testing.T, env map[string]string, args ...string) (int, error) {
+	t.Helper()
+	var mu sync.Mutex
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		requests++
+		mu.Unlock()
+		http.Error(w, "fake ADT rejects writes", http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(srv.Close)
+
+	tempDir := t.TempDir()
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+	t.Setenv("HOME", tempDir) // no ~/.vsp.json either
+	t.Setenv("SAP_URL", srv.URL)
+	t.Setenv("SAP_USER", "TESTUSER")
+	t.Setenv("SAP_PASSWORD", "secret")
+	for k, v := range env {
+		t.Setenv(k, v)
+	}
+
+	flag := rootCmd.PersistentFlags().Lookup("allow-transportable-edits")
+	if flag == nil {
+		t.Fatal("root persistent transportable-edits flag is missing")
+	}
+	oldFlagValue, oldFlagChanged, oldCfgValue, oldSystemName := flag.Value.String(), flag.Changed, cfg.AllowTransportableEdits, systemName
+	t.Cleanup(func() {
+		_ = flag.Value.Set(oldFlagValue)
+		flag.Changed = oldFlagChanged
+		cfg.AllowTransportableEdits = oldCfgValue
+		systemName = oldSystemName
+		rootCmd.SetArgs(nil)
+	})
+	_ = flag.Value.Set("false")
+	flag.Changed = false
+	cfg.AllowTransportableEdits = false
+	systemName = ""
+
+	stdin, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writer.WriteString("REPORT ztest."); err != nil {
+		t.Fatal(err)
+	}
+	_ = writer.Close()
+	oldStdin := os.Stdin
+	os.Stdin = stdin
+	defer func() { os.Stdin = oldStdin; _ = stdin.Close() }()
+
+	rootCmd.SetArgs(args)
+	err = rootCmd.Execute()
+	mu.Lock()
+	defer mu.Unlock()
+	return requests, err
+}
+
+// With only SAP_* variables set, SAP_ALLOW_TRANSPORTABLE_EDITS=true must not
+// open every transport: SAP_ALLOWED_TRANSPORTS still decides which ones.
+func TestEnvOnlyTransportableEditHonoursAllowedTransports(t *testing.T) {
+	env := map[string]string{
+		"SAP_ALLOW_TRANSPORTABLE_EDITS": "true",
+		"SAP_ALLOWED_TRANSPORTS":        "TR-EXAMPLE",
+	}
+
+	requests, err := runEnvOnlySourceWrite(t, env, "source", "write", "PROG", "ZDEMO_OUT", "--transport", "TR-OTHER")
+	if err == nil || !strings.Contains(err.Error(), "allowed transports") {
+		t.Fatalf("a transport outside SAP_ALLOWED_TRANSPORTS must be refused, got %v", err)
+	}
+	if requests != 0 {
+		t.Fatalf("the refused write reached the server (%d requests)", requests)
+	}
+
+	requests, err = runEnvOnlySourceWrite(t, env, "source", "write", "PROG", "ZDEMO_IN", "--transport", "TR-EXAMPLE")
+	if err == nil {
+		t.Fatal("source write unexpectedly succeeded against fake ADT")
+	}
+	if requests == 0 {
+		t.Fatalf("a listed transport must pass the safety check, got %v", err)
+	}
+
+	env["SAP_ENABLE_TRANSPORTS"] = "true"
+	env["SAP_TRANSPORT_READ_ONLY"] = "true"
+	env["SAP_TRANSPORT_CHOICE"] = "off"
+	lastClient = nil
+	if _, err := runEnvOnlySourceWrite(t, env, "source", "write", "PROG", "ZDEMO_IN", "--transport", "TR-EXAMPLE"); err == nil {
+		t.Fatal("source write unexpectedly succeeded against fake ADT")
+	}
+	if lastClient == nil || lastClient.Safety() == nil {
+		t.Fatal("source write did not build a client with a safety configuration")
+	}
+	if s := lastClient.Safety(); !s.EnableTransports || !s.TransportReadOnly || s.TransportChoice != "off" {
+		t.Fatalf("SAP_ENABLE_TRANSPORTS, SAP_TRANSPORT_READ_ONLY and SAP_TRANSPORT_CHOICE must reach the client, got %+v", s)
+	}
+}
