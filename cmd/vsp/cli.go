@@ -206,11 +206,10 @@ func resolveSystemParams(cmd *cobra.Command) (*systemParams, error) {
 // Priority: explicit CLI flag > SAP_ALLOW_TRANSPORTABLE_EDITS > system config >
 // default false.
 func resolveAllowTransportableEdits(cmd *cobra.Command, configured bool) (bool, error) {
+	// A command built without the root's persistent flags (tests, embedded
+	// callers) has no flag to consult; the environment and config still apply.
 	flag := cmd.Flags().Lookup("allow-transportable-edits")
-	if flag == nil {
-		return false, fmt.Errorf("allow-transportable-edits flag is not available on command %q", cmd.CommandPath())
-	}
-	if flag.Changed {
+	if flag != nil && flag.Changed {
 		value, err := cmd.Flags().GetBool("allow-transportable-edits")
 		if err != nil {
 			return false, fmt.Errorf("read --allow-transportable-edits: %w", err)
