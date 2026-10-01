@@ -319,7 +319,7 @@ func (t *Transport) request(ctx context.Context, path string, opts *RequestOptio
 	// was in fact served by the identity provider. Nothing downstream would
 	// recognise the logon page it carries, so catch it here by origin.
 	if resp.StatusCode < 400 && t.canReauth() && t.redirectedAwayFromSAP(resp) {
-		if err := t.requireSafeReauth(opts, path); err != nil {
+		if err := t.requireSafeReauth(opts, path, nil); err != nil {
 			return nil, err
 		}
 		t.setCSRFToken("")
@@ -364,7 +364,7 @@ func (t *Transport) request(ctx context.Context, path string, opts *RequestOptio
 
 		// Handle session timeout - refresh session and retry once
 		if apiErr.IsSessionExpired() {
-			if err := t.requireSafeReauth(opts, path); err != nil {
+			if err := t.requireSafeReauth(opts, path, apiErr); err != nil {
 				return nil, err
 			}
 			// Clear cached CSRF token and session ID
@@ -388,7 +388,7 @@ func (t *Transport) request(ctx context.Context, path string, opts *RequestOptio
 		// This happens after idle periods when the SAP session expires.
 		// We preserve apiErr so the original path/body is not lost if re-auth itself fails.
 		if resp.StatusCode == http.StatusUnauthorized {
-			if err := t.requireSafeReauth(opts, path); err != nil {
+			if err := t.requireSafeReauth(opts, path, apiErr); err != nil {
 				return nil, err
 			}
 			t.setCSRFToken("")
@@ -644,8 +644,9 @@ func (t *Transport) canReauth() bool {
 // new session would turn an observable failure into an unprovable outcome.
 // The session kind is the one the request was sent with: a client-wide
 // stateful session makes every request stateful (see the session header in
-// setDefaultHeaders), not only those that ask for it.
-func (t *Transport) requireSafeReauth(opts *RequestOptions, path string) error {
+// setDefaultHeaders), not only those that ask for it. cause, when not nil, is
+// the server's answer that showed the session gone; the refusal wraps it.
+func (t *Transport) requireSafeReauth(opts *RequestOptions, path string, cause error) error {
 	if !t.config.ReauthReadOnly {
 		return nil
 	}
@@ -654,13 +655,23 @@ func (t *Transport) requireSafeReauth(opts *RequestOptions, path string) error {
 		method = opts.Method
 	}
 	if t.lockOutstanding != nil && t.lockOutstanding() {
-		return fmt.Errorf("session expired on %s %s: refusing cookie-file recovery while a lock is open, because reloading would replace the session the lock belongs to", method, path)
+		return refusal(cause, "session expired on %s %s: refusing cookie-file recovery while a lock is open, because reloading would replace the session the lock belongs to; "+
+			"retry after the lock is released (unlock the object, or wait for the SAP session timeout), or restart the server", method, path)
 	}
 	stateful := t.config.SessionType == SessionStateful || (opts != nil && opts.Stateful)
 	if opts != nil && !stateful && (opts.Method == http.MethodGet || opts.Method == http.MethodHead) {
 		return nil
 	}
-	return fmt.Errorf("session expired on %s %s: refusing cookie-file recovery and replay because the remote result is unknown", method, path)
+	return refusal(cause, "session expired on %s %s: refusing cookie-file recovery and replay because the remote result is unknown", method, path)
+}
+
+// refusal formats a recovery refusal, wrapping cause when there is one.
+func refusal(cause error, format string, args ...any) error {
+	msg := fmt.Sprintf(format, args...)
+	if cause == nil {
+		return errors.New(msg)
+	}
+	return fmt.Errorf("%s: %w", msg, cause)
 }
 
 // isCSRFToken reports whether the header value is an actual token rather than the

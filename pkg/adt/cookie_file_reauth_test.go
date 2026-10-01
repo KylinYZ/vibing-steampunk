@@ -2,6 +2,7 @@ package adt
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -440,4 +441,61 @@ func TestResettableJar_ResetWhileInUse(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
+}
+
+// When the session holding a lock expires, the lock went with it. An unlock
+// that the server answers with 401 drops the dead handle, so the client is
+// not locked out of cookie-file recovery until the entry ages out; and the
+// refusal before that tells the user what to do and keeps the server's answer.
+func TestCookieFileReauth_ExpiredUnlockReleasesTheLockWindow(t *testing.T) {
+	dir := t.TempDir()
+	cookieFile := filepath.Join(dir, "cookies.txt")
+	writeTestCookieFile(t, cookieFile, "B")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/sap/bc/adt/core/discovery":
+			w.Header().Set("X-CSRF-Token", "csrf-B")
+			w.WriteHeader(http.StatusOK)
+		case sessionCookie(r) == "B":
+			_, _ = w.Write([]byte("recovered"))
+		default:
+			http.Error(w, "expired", http.StatusUnauthorized)
+		}
+	}))
+	defer server.Close()
+
+	cookies, err := LoadCookiesFromFile(cookieFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reauth, err := NewCookieFileReauthFunc(cookieFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := NewClient(server.URL, "", "", WithCookies(cookies), WithReauthFunc(reauth), WithReadOnlyReauth())
+	client.SetCookies(map[string]string{"SAP_SESSION": "A"})
+	client.noteLockOpened("LOCK-HANDLE")
+
+	_, err = client.transport.Request(context.Background(), "/read", &RequestOptions{Method: http.MethodGet})
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("refusal = %v, want it to wrap the 401 *APIError", err)
+	}
+	if !strings.Contains(err.Error(), "restart the server") {
+		t.Errorf("refusal %q does not tell the user how to get out", err)
+	}
+
+	err = client.UnlockObject(context.Background(), "/sap/bc/adt/programs/programs/ZDEMO", "LOCK-HANDLE")
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unlock = %v, want the 401 *APIError", err)
+	}
+	if client.lockOutstanding() {
+		t.Fatal("the dead lock still holds the window after its session expired")
+	}
+
+	resp, err := client.transport.Request(context.Background(), "/read", &RequestOptions{Method: http.MethodGet})
+	if err != nil || string(resp.Body) != "recovered" {
+		t.Fatalf("read after the dead lock was dropped = %v; want recovered", err)
+	}
 }
