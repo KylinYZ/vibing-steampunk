@@ -9,6 +9,11 @@ S/4, AMDP needs HANA, and some ADT resources present on S/4 are absent on ERP.
 >
 > **New in the last three releases** — the part of a root cause that never fit in a tool:
 >
+> - **[The MIME repository, byte-exact](#the-mime-repository-byte-exact--smw0-over-plain-adt).**
+>   Every file anyone uploaded through SMW0 — images, audio, a font, a game — read back
+>   whole. The bytes are a data cluster of 255-byte lines whose last line is padded, so
+>   the cluster cannot say where the file ends; `filesize` in WWWPARAMS can, and that is
+>   the step that makes it exact rather than nearly right. Nothing installed on the server.
 > - **[Cluster tables, decoded](#cluster-tables-decoded--baldat-indx-stxl-over-plain-adt).**
 >   BALDAT, INDX, STXL — every table an `EXPORT ... TO DATABASE` ever wrote — read over
 >   plain ADT and decoded here: SAP's LZH and LZC decompressed in Go, the cluster format
@@ -29,7 +34,8 @@ S/4, AMDP needs HANA, and some ADT resources present on S/4 are absent on ERP.
 >   and a hint after every program create that names the fields still without one; the
 >   [description set without touching the source](#the-description-and-the-binary-itself).
 > - **`vsp update`** — the release for this platform, verified against `checksums.txt`,
->   renamed into place of the running binary.
+>   renamed into place of the running binary, from the repository the binary was built
+>   for (`--repo owner/name` to point elsewhere).
 > - **[A response cache](#response-cache)** that turns a 4-second `slim` into 10 ms, on
 >   Go-native SQLite when it should outlive the process.
 >
@@ -410,19 +416,37 @@ SAP_ENABLE_TRANSPORTS=true vsp -s a4h transport merge TR-A TR-B --into TR-C     
 SAP_ENABLE_TRANSPORTS=true vsp -s a4h transport move "PROG ZDEMO_RUN" --from TR-A --to TR-B
 ```
 
-MCP: `system` with `merge_transports` (`source`, `target`) and
-`move_transport_object` (`object`, `from`, `to`). Both need ZADT_VSP on the
+Adding an entry nobody edits -- a `LIMU REPT` for a report's texts, a `TABU`
+with the keys of the customizing rows it carries -- and taking one out go the
+same way:
+
+```bash
+SAP_ENABLE_TRANSPORTS=true vsp -s a4h transport add TR-A "LIMU REPT ZDEMO" "R3TR PROG ZDEMO2"
+SAP_ENABLE_TRANSPORTS=true vsp -s a4h transport add TR-A "R3TR TABU ZDEMO_CONF" --key 100KEY1 --key "100KEY2*"
+SAP_ENABLE_TRANSPORTS=true vsp -s a4h transport remove TR-A "PROG ZDEMO"
+```
+
+MCP: `system` with `merge_transports` (`source`, `target`),
+`move_transport_object` (`object`, `from`, `to`), `add_transport_object`
+(`transport`, `objects` or `object` + `keys`) and `remove_transport_object`
+(`transport`, `object`). All need ZADT_VSP on the
 system — redeploy it after this release, the bridge changed.
 
 `vsp update` fetches the latest release for this platform, compares it with
 the running version, verifies the download against the release's
 `checksums.txt`, and puts it in place of the running binary — the old one is
 renamed aside first, which is what Windows allows for a running executable.
+The release comes from the repository the binary was built for: these
+releases are `github.com/oisee/vibing-steampunk`, and a fork's own releases
+update from that fork; a local `make build` carries no stamp and uses the
+default. `--repo owner/name` points at a different repository
+for one run.
 
 ```bash
-vsp update --check                                   # vsp 2.56.0, latest is 2.57.0: update available
+vsp update --check                                   # vsp 2.56.0, latest in oisee/vibing-steampunk is 2.57.0 (vsp-linux-amd64): update available
 vsp update                                           # download, verify, replace
 vsp update --version v2.55.0 --force                 # a particular release, newer or not
+vsp update --repo myorg/vibing-steampunk --check     # a different fork's releases
 ```
 
 ### Cluster tables, decoded — BALDAT, INDX, STXL over plain ADT
@@ -481,6 +505,47 @@ ABAP, decompresses with `--skip 1 --text`.
 Checked on 7.50, 7.57 and 7.58. 7.50 serves the dump feed but not the detail
 resource, so there is no call stack to read there — the correlation drops that
 rung and still ranks on the rest.
+
+### The MIME repository, byte-exact — SMW0 over plain ADT
+
+Anything uploaded through SMW0 — a logo, a sound, a font, a PDF, a Z-machine
+game a websocket handler loads at runtime — is reachable, and comes back byte
+for byte.
+
+It is not a column you can select. SMW0 writes the file into `WWWDATA` as an
+INDX-style data cluster: LZH-compressed, split over as many rows as it takes,
+and inside the cluster a table of fixed **255-byte lines**. The last line is
+padded with zeroes, so the cluster alone cannot say where the file ends. The
+true length is the `filesize` parameter in `WWWPARAMS`, and truncating to it is
+the whole difference between a file and a nearly-right file.
+
+```bash
+vsp -s a4h w3mi list                                  # every MIME object with size and type
+vsp -s a4h w3mi list 'ZDEMO%'                         # SQL LIKE on the object id
+vsp -s a4h w3mi get ZDEMO_LOGO.PNG --out logo.png
+vsp -s a4h w3mi get ZDEMO_LOGO.PNG --abapgit-dir src/ # the abapGit pair, ready to commit
+```
+
+Both halves are ordinary table reads, so nothing goes on the server: no
+abapGit, no RFC, no `ZADT_VSP`. `--abapgit-dir` writes the pair abapGit
+expects — `<name>.w3mi.data.<ext>` plus `<name>.w3mi.xml`, with the object id
+escaped the way abapGit escapes it (`ZORK-MINI.Z3` → `zork-mini%2ez3`).
+
+The `filename` parameter is deliberately **not** written into that XML, and a
+test enforces it: it records the path the file was uploaded from — a user name,
+a host, a directory layout — and these files are meant to be committable.
+
+Where a wrong answer would look like a right one, it refuses instead of
+guessing. A non-zero byte past `filesize` means `filesize` and the cluster
+disagree; a cluster shorter than `filesize` means the object is truncated on
+the system. Both say so rather than hand back a plausible file.
+
+Verified on arithmetic that can fail. A 52216-byte game came out of 205 lines
+of 255 = 52275, truncated to `filesize`, and the 59 discarded bytes were all
+zero — then the file checked *itself*: a Z-machine v3 header declares its own
+length at `0x1A` and its checksum at `0x1C`, and both matched what came out.
+Two further extractions by different routes produced the identical md5. A
+single bad byte anywhere would have broken the checksum.
 
 ### What really ran: `vsp trace`
 
@@ -907,6 +972,10 @@ vsp adt debug                                    # the same REPL over stateful H
 vsp trace run ZFOO --call                        # SAT trace: the measured call tree
 vsp trace unit ZFOO --line 12 --values           # record a unit, statement by statement
 
+# MIME repository (SMW0) — binary objects, byte-exact
+vsp w3mi list 'ZDEMO%'
+vsp w3mi get ZDEMO_LOGO.PNG --abapgit-dir src/
+
 # Tables & search
 vsp query T000 --top 5                           # query any table
 vsp search "ZCL_*" --type CLAS --max 50          # object search
@@ -1105,6 +1174,7 @@ vsp -s a4h docs img "cleanup job"                    # where in the IMG, and whi
 vsp -s a4h texts set ZDEMO_RUN P_DEVC="Package to scan"  # selection texts, a plan first
 vsp -s a4h description ZDEMO_RUN "What the report does"  # SE38's title, without touching the source
 vsp update                                           # the latest release, verified, in place of this binary
+vsp update --repo owner/name                         # from a different repository than the one this build was released from
 
 # Cluster tables — what only IMPORT could read, decoded here
 vsp -s a4h cluster read INDX --where "relid = 'ZV'" --schema

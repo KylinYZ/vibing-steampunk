@@ -1404,13 +1404,32 @@ func (c *Client) GetTransaction(ctx context.Context, tcode string) (*Transaction
 
 // --- Type Info Operations ---
 
-// TypeInfo represents type information.
+// TypeInfo describes a DDIC data element.
+//
+// Type is the ABAP data type (CHAR, SSTRING, CURR, QUAN...), not the workbench
+// object type — a value with a Length and Decimals beside it is only meaningful
+// as the former. The workbench type ("DTEL/DE") is kept in ObjectType so the
+// root attribute is not lost.
+//
+// TypeKind is "domain" when the element takes its type from a domain, whose
+// name is then in DomainName, and "predefinedAbapType" when it declares the
+// type itself, in which case DomainName is empty.
+//
+// Shapes this was written against, read off a system rather than guessed:
+//
+//	APC_CONNECTION_ID  predefinedAbapType  ""                        CHAR     32  0
+//	AMC_CHANNEL_ID     domain              AMC_CHANNEL_ID            SSTRING 140  0
+//	DMBTR              domain              AFLE13D2O16N_TO_23D2O30N  CURR     23  2
+//	MENGE_D            domain              MENG13                    QUAN     13  3
 type TypeInfo struct {
 	Name        string
 	Type        string
 	Description string
 	Length      int
 	Decimals    int
+	TypeKind    string
+	DomainName  string
+	ObjectType  string
 }
 
 // GetTypeInfo retrieves information about a data type.
@@ -1419,18 +1438,34 @@ func (c *Client) GetTypeInfo(ctx context.Context, typeName string) (*TypeInfo, e
 
 	resp, err := c.transport.Request(ctx, fmt.Sprintf("/sap/bc/adt/ddic/dataelements/%s", typeName), &RequestOptions{
 		Method: http.MethodGet,
-		Accept: "application/xml",
+		// The versioned vocabulary type, not application/xml. This endpoint
+		// refuses the generic one with 406 "The message content is not
+		// acceptable" on every name, so this call had never returned anything
+		// to anybody. GetDataElementLabels in i18n.go hit the identical bug on
+		// the identical endpoint and was fixed there; this twin was missed, so
+		// the same 406 survived here. Keep the two in step.
+		Accept: "application/vnd.sap.adt.dataelements.v2+xml",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("getting type info: %w", err)
 	}
 
+	// The type and the lengths are CHILD ELEMENTS of dtel:dataElement, not
+	// attributes of the root. The previous mapping read them as root attributes
+	// and so returned zero for every element ever — invisibly, because the 406
+	// above meant it never got as far as parsing. Lengths arrive zero-padded to
+	// six digits ("000032", "000002"); ParseInt handles the padding.
 	type typeData struct {
 		Name        string `xml:"name,attr"`
-		Type        string `xml:"type,attr"`
+		ObjectType  string `xml:"type,attr"`
 		Description string `xml:"description,attr"`
-		Length      int    `xml:"length,attr"`
-		Decimals    int    `xml:"decimals,attr"`
+		DataElement struct {
+			TypeKind string `xml:"typeKind"`
+			TypeName string `xml:"typeName"`
+			DataType string `xml:"dataType"`
+			Length   int    `xml:"dataTypeLength"`
+			Decimals int    `xml:"dataTypeDecimals"`
+		} `xml:"dataElement"`
 	}
 
 	var td typeData
@@ -1440,10 +1475,13 @@ func (c *Client) GetTypeInfo(ctx context.Context, typeName string) (*TypeInfo, e
 
 	return &TypeInfo{
 		Name:        td.Name,
-		Type:        td.Type,
+		Type:        td.DataElement.DataType,
 		Description: td.Description,
-		Length:      td.Length,
-		Decimals:    td.Decimals,
+		Length:      td.DataElement.Length,
+		Decimals:    td.DataElement.Decimals,
+		TypeKind:    td.DataElement.TypeKind,
+		DomainName:  td.DataElement.TypeName,
+		ObjectType:  td.ObjectType,
 	}, nil
 }
 

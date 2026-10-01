@@ -23,6 +23,64 @@ two worktrees, which is why it says so.
 > — the v2.55.0 sprint. Four defects that are one defect: the tool could not
 > answer, so it answered anyway. Ordered, with the test that proves each.
 
+## Open — 2026-09-14 — what `search` cannot see, and the filter that hides it
+
+Came out of a CLI design question — should every object type get a noun
+namespace like `vsp w3mi list`? The answer turned out to depend on what `search`
+can already reach, so it was measured against a live 7.5x rather than guessed.
+Three findings, and the first is a defect rather than a gap.
+
+**1. `--type X` drops sub-types — it makes `search` quietly answer wrong.**
+The filter matches the full type code, so anything with a sub-type is lost.
+Confirmed on two, and it is a shape rather than two accidents:
+
+| search | without `--type` | with `--type` |
+|---|---|---|
+| `IHTTPNVP` (a structure, `TABL/DS`) | found | `--type TABL` → **0** |
+| `WWW*` function modules (`FUGR/FF`) | 3 found | `--type FUGR` → **0** |
+
+The objects are indexed — an unfiltered search returns them with the sub-type
+right there in the output. So this is not a missing capability, it is a filter
+that silently discards matches, which is worse: `--type TABL` reports zero
+structures with the same face it would use for a package that truly has none.
+Fix is a prefix match on the type code (`TABL` matches `TABL/DT` and `TABL/DS`),
+keeping exact-code matching available for when someone means precisely `CLAS/OC`.
+**Highest value of the three** — it costs a line and it stops an answer lying.
+
+**2. W3MI is not in the repository index at all.** `search 'ZORK*'` returns
+SAPC, TRAN, SICF and PROG objects and not one MIME object, while
+`vsp w3mi list 'ZORK%'` returns five. The MIME repository is outside the
+workbench index, so no filter fix reaches it — it needs its own reader, which
+is why `vsp w3mi` exists (v2.58.0).
+
+**3. SMIM is the same and has no reader yet.** Objects exist (`SMIMPHIO` has
+rows) and `search` finds none. This is the natural next `w3mi`-shaped command:
+the BSP/MIME repository, same argument, same absence of an alternative.
+
+### The design rule this settles
+
+A type earns its own noun namespace **when its operations cannot be expressed
+in the generic verbs** — not merely because it is a distinct type.
+
+- `w3mi` passes: `search` structurally cannot list it; `get --abapgit-dir`
+  has no generic equivalent (the 255-byte/`filesize` truncation is type-specific);
+  it has no source, so `source` was never a home for it.
+- `clas`, `prog`, `intf`, `fugr` fail all three: `vsp clas list 'K*'` would be a
+  second spelling of `vsp search 'K*' --type CLAS`, and `vsp clas get X` of
+  `vsp source CLAS X`. At 66 commands, a second spelling is a cost.
+
+Two further reasons to keep the CLI verb-first with the type as data:
+
+- **It stays isomorphic with the MCP tool.** `SAP(action="read", target="CLAS ZCL_X")`
+  mirrors `vsp source CLAS ZCL_X`. Noun-first breaks that, and the docs, the
+  agent instructions and the user's mental model are shared across the two.
+- **Type-as-data scales; type-as-command-name does not.** ADT has 100+ types.
+  Verb-first, a new type costs zero commands. Noun-first, every type needs its
+  own tree, and the ones nobody writes look like "unsupported" while
+  `vsp source` reads them fine.
+
+Order to take these: the filter fix (1), then SMIM (3). (2) is done.
+
 ## Open — 2026-09-11 — minimise the ZADT_VSP / server-side install (parks #138)
 
 `README` already says ZADT_VSP is "no longer needed for debugging or for calling
